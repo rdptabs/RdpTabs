@@ -58,6 +58,7 @@ namespace RdpTabs
             }
 
             Theme.SetMode(store.Theme);   // must happen before any control is created
+            Native.SetAppDarkMode(Theme.IsDark);   // dark scrollbars and message boxes
 
             // If an address matches a saved connection, use that one (with its settings and stored password)
             for (int i = 0; i < startupProfiles.Count; i++)

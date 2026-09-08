@@ -234,6 +234,12 @@ namespace RdpTabs
             BuildCards();
         }
 
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            Native.UseThemedScrollbars(Handle, Theme.IsDark);
+        }
+
         public void FocusInput()
         {
             if (_quickInput.CanFocus) _quickInput.Focus();
@@ -249,6 +255,7 @@ namespace RdpTabs
         public void ApplyTheme()
         {
             BackColor = Theme.PageBackground;
+            Native.UseThemedScrollbars(Handle, Theme.IsDark);
             _quickFrame.ApplyTheme();
             _connectButton.Invalidate();
             _advancedButton.Invalidate();

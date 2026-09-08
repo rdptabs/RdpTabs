@@ -700,6 +700,7 @@ namespace RdpTabs
         public void ApplyTheme()
         {
             BackColor = Theme.Overlay;
+            if (IsHandleCreated) Native.UseThemedScrollbars(Handle, Theme.IsDark);
             _overlay.ApplyTheme();
             Invalidate(true);
         }

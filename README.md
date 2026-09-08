@@ -188,6 +188,9 @@ Things worth remembering:
 7. **Theme**: two complete palettes with three modes (system / dark / light), switchable at the bottom of the
    new tab page, repainted live without a restart and remembered in the settings file. The "system" mode
    reacts to `WM_SETTINGCHANGE`.
+   Scrollbars and message boxes are system-drawn, so they follow the theme through uxtheme:
+   `SetPreferredAppMode` (undocumented ordinal 135) plus `SetWindowTheme(hwnd, "DarkMode_Explorer")` on every
+   scrolling panel. Both calls are guarded -- if they fail, the scrollbars simply stay light.
 8. **The icon is Windows' own Remote Desktop icon**: `RdpTabs.ico` is a byte-for-byte copy of `mstsc.exe`'s
    `RT_GROUP_ICON`/`RT_ICON` resources (9 sizes including the 256 px PNG). Do **not** try to produce it with
    `PrivateExtractIcons` plus `Icon.ToBitmap()` -- the large sizes come out as noise. The build embeds it both
@@ -252,7 +255,6 @@ bin\RdpTabs.exe --selftest user@10.0.0.5
   scope for this version).
 - **Mixed-DPI multi-monitor**: the process is system-DPI aware, so moving to a monitor with a different DPI
   gets OS bitmap scaling (slightly soft).
-- The connection dialog's scrollbar is still the light system one (WinForms has no dark scrollbar).
 - Background tabs stay connected and keep repainting, which makes switching instant at the cost of bandwidth.
 
 ## Possible next steps

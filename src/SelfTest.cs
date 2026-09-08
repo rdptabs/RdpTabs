@@ -440,17 +440,15 @@ namespace RdpTabs
                 problems += ExpectHit(strip, new Point(emptyX, 1),
                     TabHitKind.TopEdge, -1, "gap above blank area (resize)");
 
+                // DrawToBitmap, not PrintWindow: the strip is pure GDI+ owner drawing, so rendering the
+                // control directly is deterministic. PrintWindow on a small off-screen window sometimes
+                // came back completely black.
                 string png = Path.Combine(Path.GetTempPath(), "RdpTabs-tabstrip.png");
                 try
                 {
-                    using (Bitmap bitmap = new Bitmap(host.Width, host.Height))
+                    using (Bitmap bitmap = new Bitmap(strip.Width, strip.Height))
                     {
-                        using (Graphics graphics = Graphics.FromImage(bitmap))
-                        {
-                            IntPtr hdc = graphics.GetHdc();
-                            Native.PrintWindow(host.Handle, hdc, Native.PW_RENDERFULLCONTENT);
-                            graphics.ReleaseHdc(hdc);
-                        }
+                        strip.DrawToBitmap(bitmap, new Rectangle(0, 0, strip.Width, strip.Height));
                         bitmap.Save(png, ImageFormat.Png);
                     }
                 }

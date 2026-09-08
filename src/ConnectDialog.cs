@@ -423,6 +423,7 @@ namespace RdpTabs
             base.OnHandleCreated(e);
             AppIcon.Apply(this);
             if (Theme.IsDark) Native.EnableDarkTitleBar(Handle);
+            Native.UseThemedScrollbars(_content.Handle, Theme.IsDark);
         }
 
         protected override void OnShown(EventArgs e)

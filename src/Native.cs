@@ -101,6 +101,8 @@ namespace RdpTabs
 
         public const int WM_NCPAINT = 0x0085;
         public const int RDW_INVALIDATE = 0x0001;
+        public const int RDW_ERASE = 0x0004;
+        public const int RDW_ALLCHILDREN = 0x0080;
         public const int RDW_FRAME = 0x0400;
 
         [DllImport("user32.dll")]
@@ -139,6 +141,69 @@ namespace RdpTabs
                 // The attribute does not exist before Win10; ignore.
             }
             catch (EntryPointNotFoundException)
+            {
+            }
+        }
+
+        // ---- dark mode for system-drawn bits (scrollbars, message boxes) ----
+        //
+        // WinForms has no dark scrollbar: an AutoScroll panel gets the system's non-client scrollbars, which
+        // are white in a dark UI. The fix is uxtheme's app mode plus "DarkMode_Explorer" on the scrolling
+        // window. SetPreferredAppMode / FlushMenuThemes are undocumented exports (ordinals 135 / 136, Win10
+        // 1809+), so every call is guarded and failure just leaves the light scrollbars in place.
+        private const int AppModeDefault = 0;
+        private const int AppModeForceDark = 2;
+        private const int AppModeForceLight = 3;
+
+        [DllImport("uxtheme.dll", EntryPoint = "#135", SetLastError = true)]
+        private static extern int SetPreferredAppMode(int mode);
+
+        [DllImport("uxtheme.dll", EntryPoint = "#136")]
+        private static extern void FlushMenuThemes();
+
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetWindowTheme(IntPtr hwnd, string subAppName, string subIdList);
+
+        /// <summary>Tells the system which app mode to draw its own controls in. Call before creating windows.</summary>
+        public static void SetAppDarkMode(bool dark)
+        {
+            try
+            {
+                SetPreferredAppMode(dark ? AppModeForceDark : AppModeForceLight);
+                FlushMenuThemes();
+            }
+            catch (EntryPointNotFoundException)
+            {
+                // Older Windows: no app mode to set.
+            }
+            catch (DllNotFoundException)
+            {
+            }
+        }
+
+        public static void ResetAppDarkMode()
+        {
+            try
+            {
+                SetPreferredAppMode(AppModeDefault);
+                FlushMenuThemes();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>Switches one window's scrollbars between the dark and the normal Explorer theme.</summary>
+        public static void UseThemedScrollbars(IntPtr hwnd, bool dark)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            try
+            {
+                SetWindowTheme(hwnd, dark ? "DarkMode_Explorer" : "Explorer", null);
+                RedrawWindow(hwnd, IntPtr.Zero, IntPtr.Zero,
+                    RDW_FRAME | RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+            }
+            catch (Exception)
             {
             }
         }

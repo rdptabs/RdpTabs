@@ -544,6 +544,7 @@ namespace RdpTabs
 
         private void ApplyTheme()
         {
+            Native.SetAppDarkMode(Theme.IsDark);
             BackColor = Theme.ActiveTab;
             _content.BackColor = Theme.ActiveTab;
             _strip.BackColor = Theme.Frame;
