@@ -9,6 +9,10 @@ Connection), so the application shows the Remote Desktop icon Windows users
 already recognise. The artwork remains Microsoft's. Replace it if you
 redistribute a modified build under your own name or branding.
 
+docs/inter-latin.woff2 is a latin subset of the Inter typeface by Rasmus
+Andersson, used for the project page and redistributed under the SIL Open Font
+License 1.1. Its full licence text is in docs/inter-OFL.txt.
+
 RdpTabs contains no Microsoft source code. It drives the Remote Desktop ActiveX
 control (mstscax.dll) that ships with Windows through its public COM interfaces,
 the same component the built-in mstsc client uses.
