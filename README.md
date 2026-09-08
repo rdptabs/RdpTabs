@@ -13,9 +13,9 @@ replaces the shell: a Chrome-style tab strip on top, `+` for a new connection, o
 
 ## Download
 
-`RdpTabs.exe` from the [latest release](https://github.com/yzhou79/RdpTabs/releases/latest): one 456 KB file,
+`RdpTabs.exe` from the [latest release](https://github.com/rdptabs/RdpTabs/releases/latest): one 456 KB file,
 nothing to install and no runtime to fetch (.NET Framework 4.8 is part of Windows 10/11). There is also a
-[one-page site](https://yzhou79.github.io/RdpTabs/) where you can click through the tabs.
+[one-page site](https://rdptabs.github.io/) where you can click through the tabs.
 
 It is not code-signed, so SmartScreen shows "Windows protected your PC" the first time → *More info* →
 *Run anyway*. Each release lists the SHA-256, which you can check with
