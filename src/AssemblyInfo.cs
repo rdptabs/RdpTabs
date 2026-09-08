@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("RdpTabs")]
 [assembly: AssemblyDescription("A Remote Desktop client with Chrome-style tabs")]
 [assembly: AssemblyProduct("RdpTabs")]
+[assembly: AssemblyCopyright("Copyright 2026 yzhou79 -- Apache License 2.0")]
 [assembly: AssemblyVersion(RdpTabs.AppInfo.AssemblyVersion)]
 [assembly: AssemblyFileVersion(RdpTabs.AppInfo.AssemblyVersion)]
 [assembly: AssemblyInformationalVersion(RdpTabs.AppInfo.Version)]

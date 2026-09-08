@@ -1,0 +1,14 @@
+RdpTabs
+Copyright 2026 yzhou79
+
+The Apache License 2.0 in the LICENSE file covers this project's own source code.
+
+RdpTabs.ico is not covered by it. That file is a byte-for-byte copy of the
+RT_GROUP_ICON / RT_ICON resources of Microsoft's mstsc.exe (Remote Desktop
+Connection), so the application shows the Remote Desktop icon Windows users
+already recognise. The artwork remains Microsoft's. Replace it if you
+redistribute a modified build under your own name or branding.
+
+RdpTabs contains no Microsoft source code. It drives the Remote Desktop ActiveX
+control (mstscax.dll) that ships with Windows through its public COM interfaces,
+the same component the built-in mstsc client uses.

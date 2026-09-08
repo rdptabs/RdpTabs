@@ -91,3 +91,9 @@ another user or another machine simply gets an empty password.
 - Local shortcuts are dead while the remote session has focus; fixing that needs a `WH_KEYBOARD_LL` hook.
 - Only the extended disconnect reason is available, not the primary one — again, no events.
 - Background tabs stay connected and keep repainting: instant switching, at the cost of bandwidth.
+
+## License
+
+[Apache License 2.0](LICENSE), with one carve-out: `RdpTabs.ico` is a byte-for-byte copy of Microsoft's Remote
+Desktop icon and stays Microsoft's artwork — see [NOTICE](NOTICE). Everything else here is this project's own
+code, which only calls the Windows RDP control through its public COM interfaces.
