@@ -6,11 +6,6 @@ replaces the shell: a Chrome-style tab strip on top, `+` for a new connection, o
 
 ![Two sessions in tabs, the first one active](docs/tabs.jpg)
 
-Every tab carries a status dot — grey = idle, amber spinner = connecting, green = connected, red = failed or
-disconnected:
-
-![Tabs in different states](docs/tab-strip.png)
-
 `+` opens a new connection page with quick connect, your saved connections and the recent ones. The theme
 (system / dark / light) is switched at the bottom of that page and applied without a restart:
 

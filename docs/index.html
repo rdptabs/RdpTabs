@@ -78,8 +78,8 @@ h1 span{color:var(--accent-hi)}
 .plus:hover{background:var(--tab-hover); color:var(--text)}
 .sys{margin-left:auto; display:flex; align-self:flex-start; color:var(--dim)}
 .sys span{width:42px; height:34px; line-height:34px; text-align:center; font-size:12px}
-.screens{background:#000; line-height:0}
-.screens img{display:none; width:100%; height:auto; aspect-ratio:1600/1002}
+.screens{background:var(--frame); line-height:0}
+.screens img{display:none; width:100%; height:auto; aspect-ratio:1600/1004}
 /* the only interactive machinery on the page */
 #t1:checked ~ .win .screens .s1,
 #t2:checked ~ .win .screens .s2,
@@ -99,9 +99,6 @@ h2{font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--d
 .cell{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:20px}
 .cell h3{margin:0 0 7px; font-size:16px; font-weight:600}
 .cell p{margin:0; color:var(--dim); font-size:14.5px; line-height:1.55}
-dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:10px 22px; font-size:14.5px}
-dt{color:var(--dim)}
-dd{margin:0}
 code{
   font-family:"Cascadia Mono",Consolas,ui-monospace,monospace; font-size:13px;
   background:var(--panel); border:1px solid var(--border); border-radius:5px; padding:1px 6px;
@@ -160,11 +157,11 @@ footer code{font-size:11.5px; word-break:break-all}
       <span class="sys" aria-hidden="true"><span>&#8212;</span><span>&#9723;</span><span>&#10005;</span></span>
     </div>
     <div class="screens">
-      <img class="s1" src="site-session.jpg" width="1600" height="1002" decoding="async"
+      <img class="s1" src="site-session.jpg" width="1600" height="1004" decoding="async"
            alt="A connected Windows session filling the window below the tab strip">
-      <img class="s2" src="site-newtab.jpg" width="1600" height="1002" loading="lazy" decoding="async"
+      <img class="s2" src="site-newtab.jpg" width="1600" height="1004" loading="lazy" decoding="async"
            alt="The new connection page with a quick-connect box, saved connections and recent connections">
-      <img class="s3" src="site-error.jpg" width="1600" height="1002" loading="lazy" decoding="async"
+      <img class="s3" src="site-error.jpg" width="1600" height="1004" loading="lazy" decoding="async"
            alt="A failed connection showing why it failed, with Retry and Edit connection buttons">
     </div>
   </div>
@@ -193,22 +190,6 @@ footer code{font-size:11.5px; word-break:break-all}
   </div>
 </section>
 
-<section>
-  <h2>Before you download</h2>
-  <dl>
-    <dt>Requires</dt>
-    <dd>Windows 10 or 11. .NET Framework 4.8 is already part of both.</dd>
-    <dt>SmartScreen</dt>
-    <dd>The binary is not code-signed, so the first run shows "Windows protected your PC" →
-        <em>More info</em> → <em>Run anyway</em>.</dd>
-    <dt>Verify it</dt>
-    <dd><code>certutil -hashfile RdpTabs.exe SHA256</code> — the expected value is in the
-        <a href="https://github.com/yzhou79/RdpTabs/releases/latest">release notes</a>.</dd>
-    <dt>Not in v1.0.0</dt>
-    <dd>No full screen, no Ctrl+Alt+Del, no tearing a tab into its own window, and local shortcuts sleep
-        while the remote session holds the keyboard.</dd>
-  </dl>
-</section>
 
 <footer>
   <span>RdpTabs v1.0.0 · <a href="https://github.com/yzhou79/RdpTabs">GitHub</a> ·
