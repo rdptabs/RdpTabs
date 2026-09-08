@@ -1,0 +1,9 @@
+# build output
+bin/
+obj/
+*.pdb
+
+# editor / IDE
+.vs/
+*.user
+*.suo

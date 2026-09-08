@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Optional build path: on a machine with the .NET SDK, `dotnet build -c Release` works.
+    It shares the same sources under src\ with build.cmd (.NET Framework 4.8, zero install) and needs no
+    NuGet packages: COM goes through IDispatch late binding and DPAPI through crypt32 P/Invoke.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>RdpTabs</AssemblyName>
+    <RootNamespace>RdpTabs</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- DPI awareness is decided by app.manifest; keep this in sync -->
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <ApplicationIcon>RdpTabs.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+    <!-- Mirrors build.cmd's -resource: lets the app pick an icon size at run time -->
+    <EmbeddedResource Include="RdpTabs.ico" LogicalName="RdpTabs.ico" />
+  </ItemGroup>
+
+</Project>
