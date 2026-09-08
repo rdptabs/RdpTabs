@@ -20,6 +20,12 @@ namespace RdpTabs
                 string option = args[0].TrimStart('-', '/').ToLowerInvariant();
                 if (option == "selftest")
                     return SelfTest.Run(args.Length > 1 ? args[1] : null);
+                if (option == "version" || option == "v")
+                {
+                    Native.AttachConsole(Native.ATTACH_PARENT_PROCESS);
+                    Console.WriteLine(AppInfo.Describe());
+                    return 0;
+                }
                 if (option == "help" || option == "h" || option == "?")
                 {
                     ShowUsage();
@@ -89,14 +95,15 @@ namespace RdpTabs
         private static void ShowUsage()
         {
             string text =
-                "RdpTabs - a tabbed Remote Desktop client\n\n" +
+                AppInfo.Describe() + " - a tabbed Remote Desktop client\n\n" +
                 "Usage:\n" +
                 "  RdpTabs.exe                        start the UI\n" +
                 "  RdpTabs.exe ADDRESS [ADDRESS...]   one tab per address; user@host:port is supported\n" +
                 "                                     an address matching a saved connection reuses its\n" +
                 "                                     settings and stored password\n" +
                 "  RdpTabs.exe --selftest             self test: ActiveX host, late binding, DPAPI, JSON\n" +
-                "  RdpTabs.exe --selftest HOST:PORT   self test plus a real connection, logging state changes\n";
+                "  RdpTabs.exe --selftest HOST:PORT   self test plus a real connection, logging state changes\n" +
+                "  RdpTabs.exe --version              print the version and exit\n";
             Native.AttachConsole(Native.ATTACH_PARENT_PROCESS);
             Console.WriteLine(text);
             MessageBox.Show(text, "RdpTabs", MessageBoxButtons.OK, MessageBoxIcon.Information);
