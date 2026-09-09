@@ -718,34 +718,46 @@ namespace RdpTabs
             float r = _radius;
             float s = _shoulder;
 
-            // A circular arc meets the straight edge with an abrupt jump in curvature, which is what reads as
-            // a sharp corner. So each top corner is a cubic Bezier that starts Reach * radius away from the
-            // vertex and keeps its control points near it: the curve is flatter in the middle and blends into
-            // the edges over a longer run. Reach 1 with Pull 0.448 would reproduce a circle exactly.
-            const float Reach = 1.15f;
-            const float Pull = 0.55f;
+            // Every corner is a cubic Bezier rounding a virtual vertex: the curve leaves one edge Reach away
+            // from the vertex and rejoins the other edge Reach away on the far side, with each control point
+            // Bulge of that distance back towards its own end point. Bulge 0.5523 reproduces a circular arc
+            // exactly; above it the curve sits fuller than a circle, so curvature ramps up gradually instead
+            // of jumping from nothing to 1/r the instant the straight edge ends -- that jump is what the eye
+            // reads as a sharp corner.
+            const float Circle = 0.5523f;
+            const float TopReach = 1.15f;    // top corners, in radii
+            const float TopBulge = Circle;
+            // The feet cannot get wider: their width is what interlocks with the neighbouring tab. So they
+            // gain their smoothness by rising higher up the tab's side instead, which spreads the same
+            // sideways travel over a longer run.
+            const float FootRise = 1.7f;     // vertical extent, in shoulder widths
+            const float FootBulge = 0.68f;
 
             float bodyLeft = left + s;
             float bodyRight = right - s;
-            // Never let the two corners meet in the middle of a narrow tab.
-            float reach = Math.Min(r * Reach, (bodyRight - bodyLeft) / 2f);
-            float pull = reach * (1f - Pull);
+            // Never let the two top corners meet in the middle of a narrow tab.
+            float reach = Math.Min(r * TopReach, (bodyRight - bodyLeft) / 2f);
+            float pull = reach * (1f - TopBulge);
+            // Nor let a foot climb into the top corner on a short strip.
+            float rise = Math.Min(s * FootRise, bottom - top - reach);
+            float footX = s * (1f - FootBulge);
+            float footY = rise * (1f - FootBulge);
 
             GraphicsPath path = new GraphicsPath();
-            // Left foot: a concave quarter circle centred at (left, bottom - s) -- outside the tab, which is
-            // what makes it curve away. The centre has to sit there and nowhere else: it is the only position
-            // whose tangents are horizontal where the foot meets the strip and vertical where it meets the
-            // tab's side, so the flare flows into both instead of hitting them at a right angle.
-            path.AddArc(left - s, bottom - s * 2f, s * 2f, s * 2f, 90f, -90f);
-            path.AddLine(bodyLeft, bottom - s, bodyLeft, top + reach);
+            // Left foot: from the strip, curving away from the tab up into its side. Tangent is horizontal at
+            // the bottom and vertical where it meets the side, so it flows into both edges.
+            path.AddBezier(left, bottom, left + footX, bottom,
+                           bodyLeft, bottom - rise + footY, bodyLeft, bottom - rise);
+            path.AddLine(bodyLeft, bottom - rise, bodyLeft, top + reach);
             path.AddBezier(bodyLeft, top + reach, bodyLeft, top + pull,
                            bodyLeft + pull, top, bodyLeft + reach, top);
             path.AddLine(bodyLeft + reach, top, bodyRight - reach, top);
             path.AddBezier(bodyRight - reach, top, bodyRight - pull, top,
                            bodyRight, top + pull, bodyRight, top + reach);
-            path.AddLine(bodyRight, top + reach, bodyRight, bottom - s);
-            // Right foot, mirrored: centred at (right, bottom - s)
-            path.AddArc(right - s, bottom - s * 2f, s * 2f, s * 2f, 180f, -90f);
+            path.AddLine(bodyRight, top + reach, bodyRight, bottom - rise);
+            // Right foot, mirrored
+            path.AddBezier(bodyRight, bottom - rise, bodyRight, bottom - rise + footY,
+                           right - footX, bottom, right, bottom);
             path.CloseFigure();
             return path;
         }
