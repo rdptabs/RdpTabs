@@ -226,8 +226,8 @@ namespace RdpTabs
             _topPad = Scale(2, s);
             _tabHeight = Scale(34, s);
             _stripHeight = _topPad + _tabHeight;
-            _radius = Scale(12, s);
-            _shoulder = Scale(11, s);
+            _radius = Scale(10, s);
+            _shoulder = Scale(9, s);
             _slotMax = Scale(240, s);
             _slotMin = Scale(58, s);
             _iconSize = Scale(16, s);
@@ -722,8 +722,8 @@ namespace RdpTabs
             // a sharp corner. So each top corner is a cubic Bezier that starts Reach * radius away from the
             // vertex and keeps its control points near it: the curve is flatter in the middle and blends into
             // the edges over a longer run. Reach 1 with Pull 0.448 would reproduce a circle exactly.
-            const float Reach = 1.4f;
-            const float Pull = 0.62f;
+            const float Reach = 1.15f;
+            const float Pull = 0.55f;
 
             float bodyLeft = left + s;
             float bodyRight = right - s;
