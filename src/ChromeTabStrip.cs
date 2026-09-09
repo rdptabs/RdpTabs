@@ -732,9 +732,11 @@ namespace RdpTabs
             float pull = reach * (1f - Pull);
 
             GraphicsPath path = new GraphicsPath();
-            // Left foot: concave quarter circle centred at (bodyLeft, bottom), so it curves away from the tab
-            // and interlocks with the neighbour. Its width stays exactly the shoulder.
-            path.AddArc(left, bottom - s, s * 2f, s * 2f, 180f, 90f);
+            // Left foot: a concave quarter circle centred at (left, bottom - s) -- outside the tab, which is
+            // what makes it curve away. The centre has to sit there and nowhere else: it is the only position
+            // whose tangents are horizontal where the foot meets the strip and vertical where it meets the
+            // tab's side, so the flare flows into both instead of hitting them at a right angle.
+            path.AddArc(left - s, bottom - s * 2f, s * 2f, s * 2f, 90f, -90f);
             path.AddLine(bodyLeft, bottom - s, bodyLeft, top + reach);
             path.AddBezier(bodyLeft, top + reach, bodyLeft, top + pull,
                            bodyLeft + pull, top, bodyLeft + reach, top);
@@ -742,8 +744,8 @@ namespace RdpTabs
             path.AddBezier(bodyRight - reach, top, bodyRight - pull, top,
                            bodyRight, top + pull, bodyRight, top + reach);
             path.AddLine(bodyRight, top + reach, bodyRight, bottom - s);
-            // Right foot, mirrored: centred at (bodyRight, bottom)
-            path.AddArc(bodyRight - s, bottom - s, s * 2f, s * 2f, 270f, 90f);
+            // Right foot, mirrored: centred at (right, bottom - s)
+            path.AddArc(right - s, bottom - s * 2f, s * 2f, s * 2f, 180f, -90f);
             path.CloseFigure();
             return path;
         }
