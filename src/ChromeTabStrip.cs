@@ -226,8 +226,8 @@ namespace RdpTabs
             _topPad = Scale(2, s);
             _tabHeight = Scale(34, s);
             _stripHeight = _topPad + _tabHeight;
-            _radius = Scale(8, s);
-            _shoulder = Scale(8, s);
+            _radius = Scale(12, s);
+            _shoulder = Scale(11, s);
             _slotMax = Scale(240, s);
             _slotMin = Scale(58, s);
             _iconSize = Scale(16, s);
@@ -718,16 +718,32 @@ namespace RdpTabs
             float r = _radius;
             float s = _shoulder;
 
+            // A circular arc meets the straight edge with an abrupt jump in curvature, which is what reads as
+            // a sharp corner. So each top corner is a cubic Bezier that starts Reach * radius away from the
+            // vertex and keeps its control points near it: the curve is flatter in the middle and blends into
+            // the edges over a longer run. Reach 1 with Pull 0.448 would reproduce a circle exactly.
+            const float Reach = 1.4f;
+            const float Pull = 0.62f;
+
+            float bodyLeft = left + s;
+            float bodyRight = right - s;
+            // Never let the two corners meet in the middle of a narrow tab.
+            float reach = Math.Min(r * Reach, (bodyRight - bodyLeft) / 2f);
+            float pull = reach * (1f - Pull);
+
             GraphicsPath path = new GraphicsPath();
-            // Left foot: a quarter circle centred at (left, bottom - s), running from (left, bottom) to
-            // (left + s, bottom - s). The centre lies outside the tab, which is what makes it concave.
-            path.AddArc(left - s, bottom - s * 2f, s * 2f, s * 2f, 90f, -90f);
-            // top-left convex corner
-            path.AddArc(left + s, top, r * 2f, r * 2f, 180f, 90f);
-            // top-right convex corner
-            path.AddArc(right - s - r * 2f, top, r * 2f, r * 2f, 270f, 90f);
-            // Right foot: centred at (right, bottom - s)
-            path.AddArc(right - s, bottom - s * 2f, s * 2f, s * 2f, 180f, -90f);
+            // Left foot: concave quarter circle centred at (bodyLeft, bottom), so it curves away from the tab
+            // and interlocks with the neighbour. Its width stays exactly the shoulder.
+            path.AddArc(left, bottom - s, s * 2f, s * 2f, 180f, 90f);
+            path.AddLine(bodyLeft, bottom - s, bodyLeft, top + reach);
+            path.AddBezier(bodyLeft, top + reach, bodyLeft, top + pull,
+                           bodyLeft + pull, top, bodyLeft + reach, top);
+            path.AddLine(bodyLeft + reach, top, bodyRight - reach, top);
+            path.AddBezier(bodyRight - reach, top, bodyRight - pull, top,
+                           bodyRight, top + pull, bodyRight, top + reach);
+            path.AddLine(bodyRight, top + reach, bodyRight, bottom - s);
+            // Right foot, mirrored: centred at (bodyRight, bottom)
+            path.AddArc(bodyRight - s, bottom - s, s * 2f, s * 2f, 270f, 90f);
             path.CloseFigure();
             return path;
         }
