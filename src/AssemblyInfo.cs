@@ -22,7 +22,7 @@ namespace RdpTabs
     internal static class AppInfo
     {
         /// <summary>Release version. Keep in step with the git tag.</summary>
-        public const string Version = "1.0.0";
+        public const string Version = "1.0.1";
 
         /// <summary>Four-part form required by AssemblyVersion / AssemblyFileVersion.</summary>
         public const string AssemblyVersion = Version + ".0";
