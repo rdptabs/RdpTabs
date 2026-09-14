@@ -50,7 +50,8 @@ namespace RdpTabs
     }
 
     /// <summary>
-    /// Chrome-style tab strip: shaped tabs, status dots, close buttons, the "+" button and the window buttons.
+    /// Browser-style tab strip: Firefox-shaped tabs, status dots, close buttons, the "+" button and
+    /// the window buttons.
     /// Blank areas return HTTRANSPARENT so hit-testing falls through to the parent window, which reuses the
     /// native drag / snap / double-click-to-maximize / edge-resize behaviour (see MainForm's WM_NCHITTEST and
     /// WM_NCCALCSIZE).

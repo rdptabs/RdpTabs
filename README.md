@@ -1,9 +1,9 @@
-# RdpTabs — a Remote Desktop client with Chrome-style tabs
+# RdpTabs — a Remote Desktop client with browser-style tabs
 
 Windows' own mstsc works well; the one thing it lacks is **tabs**. Connect to three machines and you get three
 windows to hunt for on the taskbar.
 
-RdpTabs keeps the Remote Desktop engine that ships with Windows and replaces only the shell: a Chrome-style
+RdpTabs keeps the Remote Desktop engine that ships with Windows and replaces only the shell: a browser-style
 tab strip on top, `+` for a new connection, one window for every session.
 
 **[rdptabs.github.io](https://rdptabs.github.io/)** — click through the tabs before you download.

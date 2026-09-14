@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 // GenerateAssemblyInfo=false so the net8 path uses these same attributes instead of generating its own.
 
 [assembly: AssemblyTitle("RdpTabs")]
-[assembly: AssemblyDescription("A Remote Desktop client with Chrome-style tabs")]
+[assembly: AssemblyDescription("A Remote Desktop client with browser-style tabs")]
 [assembly: AssemblyProduct("RdpTabs")]
 [assembly: AssemblyCopyright("Copyright 2026 yzhou79 -- Apache License 2.0")]
 [assembly: AssemblyVersion(RdpTabs.AppInfo.AssemblyVersion)]
