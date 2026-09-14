@@ -76,7 +76,7 @@ namespace RdpTabs
 
         // Metrics in 96-DPI units, multiplied by the DPI ratio when used
         private int _dpi = 96;
-        private int _stripHeight, _topPad, _tabHeight, _radius, _shoulder;
+        private int _stripHeight, _topPad, _tabHeight, _tabBottomPad, _radius, _shoulder;
         private int _slotMax, _slotMin, _iconSize, _closeSize, _paddingX, _newTabSize, _windowButtonWidth;
         private int _dragThreshold;
 
@@ -226,8 +226,12 @@ namespace RdpTabs
             _topPad = Scale(2, s);
             _tabHeight = Scale(34, s);
             _stripHeight = _topPad + _tabHeight;
-            _radius = Scale(10, s);
-            _shoulder = Scale(9, s);
+            // Firefox-style tabs: each one is a free-standing rounded rectangle rather than a Chrome tab
+            // fused to the strip, so it needs air underneath it as well as a modest radius. The shoulder is
+            // no longer an interlocking foot, just the gap left between neighbours.
+            _tabBottomPad = Scale(3, s);
+            _radius = Scale(6, s);
+            _shoulder = Scale(5, s);
             _slotMax = Scale(240, s);
             _slotMin = Scale(58, s);
             _iconSize = Scale(16, s);
@@ -298,7 +302,9 @@ namespace RdpTabs
         {
             EnsureMetrics();
             int x = TabsLeft - _scrollOffset + index * Stride;
-            return new Rectangle(x, _topPad, SlotWidth, _tabHeight);
+            // Shorter than the strip: the difference is the gap the tab floats above the strip's bottom edge.
+            // Icons, title and close button all centre on this rectangle, so they follow automatically.
+            return new Rectangle(x, _topPad, SlotWidth, _tabHeight - _tabBottomPad);
         }
 
         private Rectangle CloseRect(int index)
@@ -423,11 +429,11 @@ namespace RdpTabs
             Rectangle tab = TabRect(index);
             if (tab.Right <= TabsLeft || tab.X >= TabAreaRight + _shoulder) return TabHit.None;
 
-            // Only the tab body counts; the shoulders belong to the neighbours / blank area, which feels
-            // closer to Chrome. Vertically it starts at the top of the strip so clicking the gap directly
-            // above a tab still selects that tab.
+            // Only the tab body counts; the gaps to either side belong to the neighbours or the blank area.
+            // Vertically it covers the whole strip, so the thin gaps above and below the floating tab still
+            // select it rather than falling through to the window as caption and starting a drag.
             Rectangle body = new Rectangle(tab.X + _shoulder / 2, 0,
-                tab.Width - _shoulder, tab.Bottom);
+                tab.Width - _shoulder, _stripHeight);
             if (!body.Contains(point)) return TabHit.None;
             if (point.X > TabAreaRight + _shoulder) return TabHit.None;
 
@@ -642,7 +648,7 @@ namespace RdpTabs
                 Rectangle tab = TabRect(i);
                 float x = tab.Right - _shoulder / 2f;
                 using (Pen pen = new Pen(Theme.TabSeparator, 1f))
-                    g.DrawLine(pen, x, tab.Y + _tabHeight * 0.25f, x, tab.Y + _tabHeight * 0.75f);
+                    g.DrawLine(pen, x, tab.Y + tab.Height * 0.25f, x, tab.Y + tab.Height * 0.75f);
             }
         }
 
@@ -706,58 +712,27 @@ namespace RdpTabs
         }
 
         /// <summary>
-        /// The Chrome tab shape: two convex top corners plus a concave shoulder on each side at the bottom.
-        /// The body spans bounds.Width - 2 * shoulder; the feet interlock with the neighbouring tabs.
+        /// The Firefox tab shape: a free-standing rounded rectangle. Unlike Chrome's, it is not fused to the
+        /// strip -- there is no concave foot, and the shoulder is simply the gap left to its neighbours, so
+        /// the body spans bounds.Width - 2 * shoulder.
         /// </summary>
         private GraphicsPath BuildTabPath(Rectangle bounds)
         {
-            float left = bounds.Left;
-            float right = bounds.Right;
-            float top = bounds.Top;
-            float bottom = bounds.Bottom;
-            float r = _radius;
-            float s = _shoulder;
-
-            // Every corner is a cubic Bezier rounding a virtual vertex: the curve leaves one edge Reach away
-            // from the vertex and rejoins the other edge Reach away on the far side, with each control point
-            // Bulge of that distance back towards its own end point. Bulge 0.5523 reproduces a circular arc
-            // exactly; above it the curve sits fuller than a circle, so curvature ramps up gradually instead
-            // of jumping from nothing to 1/r the instant the straight edge ends -- that jump is what the eye
-            // reads as a sharp corner.
-            const float Circle = 0.5523f;
-            const float TopReach = 1.15f;    // top corners, in radii
-            const float TopBulge = Circle;
-            // The feet cannot get wider: their width is what interlocks with the neighbouring tab. So they
-            // gain their smoothness by rising higher up the tab's side instead, which spreads the same
-            // sideways travel over a longer run.
-            const float FootRise = 1.7f;     // vertical extent, in shoulder widths
-            const float FootBulge = 0.68f;
-
-            float bodyLeft = left + s;
-            float bodyRight = right - s;
-            // Never let the two top corners meet in the middle of a narrow tab.
-            float reach = Math.Min(r * TopReach, (bodyRight - bodyLeft) / 2f);
-            float pull = reach * (1f - TopBulge);
-            // Nor let a foot climb into the top corner on a short strip.
-            float rise = Math.Min(s * FootRise, bottom - top - reach);
-            float footX = s * (1f - FootBulge);
-            float footY = rise * (1f - FootBulge);
+            float r = Math.Min(_radius, Math.Min(bounds.Width / 2f - _shoulder, bounds.Height / 2f));
+            RectangleF body = new RectangleF(bounds.Left + _shoulder, bounds.Top,
+                Math.Max(1f, bounds.Width - _shoulder * 2f), bounds.Height);
 
             GraphicsPath path = new GraphicsPath();
-            // Left foot: from the strip, curving away from the tab up into its side. Tangent is horizontal at
-            // the bottom and vertical where it meets the side, so it flows into both edges.
-            path.AddBezier(left, bottom, left + footX, bottom,
-                           bodyLeft, bottom - rise + footY, bodyLeft, bottom - rise);
-            path.AddLine(bodyLeft, bottom - rise, bodyLeft, top + reach);
-            path.AddBezier(bodyLeft, top + reach, bodyLeft, top + pull,
-                           bodyLeft + pull, top, bodyLeft + reach, top);
-            path.AddLine(bodyLeft + reach, top, bodyRight - reach, top);
-            path.AddBezier(bodyRight - reach, top, bodyRight - pull, top,
-                           bodyRight, top + pull, bodyRight, top + reach);
-            path.AddLine(bodyRight, top + reach, bodyRight, bottom - rise);
-            // Right foot, mirrored
-            path.AddBezier(bodyRight, bottom - rise, bodyRight, bottom - rise + footY,
-                           right - footX, bottom, right, bottom);
+            if (r <= 0.5f)
+            {
+                path.AddRectangle(body);
+                return path;
+            }
+            float d = r * 2f;
+            path.AddArc(body.Left, body.Top, d, d, 180f, 90f);                    // top-left
+            path.AddArc(body.Right - d, body.Top, d, d, 270f, 90f);               // top-right
+            path.AddArc(body.Right - d, body.Bottom - d, d, d, 0f, 90f);          // bottom-right
+            path.AddArc(body.Left, body.Bottom - d, d, d, 90f, 90f);              // bottom-left
             path.CloseFigure();
             return path;
         }
