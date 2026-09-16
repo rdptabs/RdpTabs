@@ -18,6 +18,10 @@ namespace RdpTabs
         private const int ResizeDebounceMs = 450;
         private const int PreflightTimeoutMs = 3000;
         private const int MinDisplayUpdateGapMs = 900;
+        // Confirmation re-sends of the initial scale: 1 s, 2 s, 4 s after the first accepted call
+        private const int ScaleSettleFirstGapMs = 1000;
+        private const int ScaleSettleMaxGapMs = 4000;
+        private const int ScaleSettleAttempts = 3;
 
         /// <summary>
         /// Our own hard timeout. The control's overallConnectionTimeout does not always fire -- verified:
@@ -44,6 +48,7 @@ namespace RdpTabs
         private readonly SessionOverlay _overlay;
         private readonly System.Windows.Forms.Timer _poll;
         private readonly System.Windows.Forms.Timer _resizeDebounce;
+        private readonly System.Windows.Forms.Timer _scaleSettle;
         private readonly Stopwatch _sinceDisplayUpdate = Stopwatch.StartNew();
 
         private RdpAxHost _host;
@@ -60,6 +65,7 @@ namespace RdpTabs
         private int _appliedDeviceScale;
         private bool _pendingInitialScale;
         private int _initialScaleAttempts;
+        private int _scaleSettleAttempts;
         private FormWindowState _lastWindowState = FormWindowState.Normal;
         private Size _appliedDesktop = Size.Empty;
         private int _connectToken;
@@ -94,6 +100,9 @@ namespace RdpTabs
             _resizeDebounce = new System.Windows.Forms.Timer();
             _resizeDebounce.Interval = ResizeDebounceMs;
             _resizeDebounce.Tick += OnResizeDebounce;
+
+            _scaleSettle = new System.Windows.Forms.Timer();
+            _scaleSettle.Tick += OnScaleSettle;
 
             UpdateOverlay();
         }
@@ -256,6 +265,7 @@ namespace RdpTabs
             _displayUpdatesApplied = 0;
             _pendingInitialScale = false;
             _initialScaleAttempts = 0;
+            StopScaleSettle();
 
             // Reconnecting needs a fresh control instance: calling Connect again on a disconnected OCX is unreliable.
             DisposeOcx();
@@ -814,6 +824,12 @@ namespace RdpTabs
             if (ApplyDynamicResolution(true))
             {
                 _pendingInitialScale = false;
+                // The call returning success only means the control accepted it. Right after connecting the
+                // server may not have finished wiring up its display-control channel yet, in which case the
+                // scale is silently dropped -- which is why it sometimes took a reconnect to appear. So keep
+                // re-issuing the same size and scale for a few seconds; it is idempotent and invisible when
+                // it has already taken effect.
+                StartScaleSettle();
                 return;
             }
 
@@ -826,6 +842,42 @@ namespace RdpTabs
             }
             _resizeDebounce.Stop();
             _resizeDebounce.Start();
+        }
+
+        /// <summary>Re-sends size and scale a few times after the first success, with a widening gap.</summary>
+        private void StartScaleSettle()
+        {
+            _scaleSettleAttempts = 0;
+            _scaleSettle.Interval = ScaleSettleFirstGapMs;
+            _scaleSettle.Start();
+        }
+
+        private void StopScaleSettle()
+        {
+            _scaleSettleAttempts = 0;
+            _scaleSettle.Stop();
+        }
+
+        private void OnScaleSettle(object sender, EventArgs e)
+        {
+            if (_shuttingDown || _ocx == null || _state != SessionState.Connected)
+            {
+                StopScaleSettle();
+                return;
+            }
+            if (IsWindowMinimized()) return;   // degenerate size; try again on the next tick
+
+            _scaleSettleAttempts++;
+            // Stop on the first refusal rather than carrying on: one update has already been accepted, and
+            // letting failures pile up here would trip the "no dynamic resolution" fallback and switch
+            // SmartSizing on behind a fixed-resolution profile's back.
+            if (!ApplyDynamicResolution(true) || _scaleSettleAttempts >= ScaleSettleAttempts)
+            {
+                StopScaleSettle();
+                return;
+            }
+            // Widen the gap: the control refuses updates closer together than MinDisplayUpdateGapMs anyway
+            _scaleSettle.Interval = Math.Min(ScaleSettleMaxGapMs, _scaleSettle.Interval * 2);
         }
 
         private bool ApplyDynamicResolution()
@@ -879,6 +931,8 @@ namespace RdpTabs
                 _poll.Dispose();
                 _resizeDebounce.Stop();
                 _resizeDebounce.Dispose();
+                _scaleSettle.Stop();
+                _scaleSettle.Dispose();
                 _ocx = null;
                 _advanced = null;
             }
