@@ -226,12 +226,12 @@ namespace RdpTabs
             // while the gap directly above a tab belongs to that tab (see HitTestTab). Tab height is unchanged.
             // Firefox-style tabs: each one is a free-standing rounded rectangle rather than a Chrome tab
             // fused to the strip, so it wants equal air above and below plus a modest radius. That leaves a
-            // 32pt tab in a 40pt strip. The shoulder is no longer an interlocking foot, just the gap left
+            // 32pt tab in a 44pt strip. The shoulder is no longer an interlocking foot, just the gap left
             // between neighbours.
-            _topPad = Scale(4, s);
-            _tabHeight = Scale(36, s);
+            _topPad = Scale(6, s);
+            _tabHeight = Scale(38, s);
             _stripHeight = _topPad + _tabHeight;
-            _tabBottomPad = Scale(4, s);
+            _tabBottomPad = Scale(6, s);
             _radius = Scale(6, s);
             _shoulder = Scale(5, s);
             _slotMax = Scale(240, s);
