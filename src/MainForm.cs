@@ -18,7 +18,15 @@ namespace RdpTabs
             public ConnectionProfile Profile;
         }
 
+        // Auto-hide: polled because a live session swallows every mouse message (see OnAutoHideTick)
+        private const int AutoHidePollMs = 100;
+        private const int AutoHideGraceTicks = 6;   // ~600 ms below the strip before it slides away
+        private const int RevealBandPt = 4;         // how close to the top edge counts as "reveal"
+
         private readonly ProfileStore _store;
+        private readonly System.Windows.Forms.Timer _autoHide = new System.Windows.Forms.Timer();
+        private int _hideCountdown;
+        private bool _stripMenuOpen;
         private readonly ChromeTabStrip _strip = new ChromeTabStrip();
         private readonly Panel _content = new Panel();
         private readonly List<SessionTab> _tabs = new List<SessionTab>();
@@ -42,7 +50,9 @@ namespace RdpTabs
             _content.BackColor = Theme.ActiveTab;
             Controls.Add(_content);
 
-            _strip.SetTranslucent(_store.ImmersiveStrip);
+            _autoHide.Interval = AutoHidePollMs;
+            _autoHide.Tick += OnAutoHideTick;
+            _strip.SetOverlay(_store.AutoHideStrip);
 
             _strip.TabSelected += OnTabSelected;
             _strip.TabCloseRequested += OnTabCloseRequested;
@@ -54,6 +64,7 @@ namespace RdpTabs
 
             RestoreWindowPlacement();
             AddNewTabPage(true);
+            SyncAutoHide();
         }
 
         private static int Sc(int value)
@@ -299,9 +310,9 @@ namespace RdpTabs
                 menu.Items.Add(new ToolStripSeparator());
             }
 
-            ToolStripMenuItem immersive = Menus.Item("Immersive tab bar", delegate { ToggleImmersive(); });
-            immersive.Checked = _strip.Translucent;
-            menu.Items.Add(immersive);
+            ToolStripMenuItem autoHide = Menus.Item("Auto-hide tab bar", delegate { ToggleAutoHide(); });
+            autoHide.Checked = _store.AutoHideStrip;
+            menu.Items.Add(autoHide);
             menu.Items.Add(new ToolStripSeparator());
 
             menu.Items.Add(Menus.Item("Close tab", delegate { CloseTab(index); }));
@@ -314,16 +325,92 @@ namespace RdpTabs
                 }));
             }
 
+            _stripMenuOpen = true;
+            menu.Closed += delegate { _stripMenuOpen = false; };
             menu.Show(e.ScreenLocation);
         }
 
-        private void ToggleImmersive()
+        private void ToggleAutoHide()
         {
-            _strip.SetTranslucent(!_strip.Translucent);
-            _store.ImmersiveStrip = _strip.Translucent;
+            _store.AutoHideStrip = !_store.AutoHideStrip;
             _store.Save();
+            // Auto-hide needs the overlay layout: if the strip kept its own band, every reveal would resize
+            // the session and reset the remote resolution.
+            _strip.SetOverlay(_store.AutoHideStrip);
+            SyncAutoHide();
             PerformLayout();
             _strip.Invalidate();
+        }
+
+        /// <summary>Starts or stops the poll, and pins the strip back when auto-hide is switched off.</summary>
+        private void SyncAutoHide()
+        {
+            _hideCountdown = 0;
+            if (_store.AutoHideStrip)
+            {
+                if (!_autoHide.Enabled) _autoHide.Start();
+                return;
+            }
+            _autoHide.Stop();
+            if (!_strip.Visible) _strip.Visible = true;
+        }
+
+        /// <summary>
+        /// Polls the cursor rather than listening for mouse moves: once the pointer is over a live session the
+        /// RDP control owns every mouse message, so the strip would never hear about it. GetCursorPos is global
+        /// and does not care who has the input.
+        /// </summary>
+        private void OnAutoHideTick(object sender, EventArgs e)
+        {
+            if (!_store.AutoHideStrip)
+            {
+                SyncAutoHide();
+                return;
+            }
+
+            bool visible;
+            if (_stripMenuOpen || _strip.IsBusy || !ActiveTabIsSession())
+            {
+                visible = true;            // pinned: no remote picture to get out of the way of, or mid-gesture
+                _hideCountdown = 0;
+            }
+            else
+            {
+                Rectangle client = RectangleToScreen(new Rectangle(Point.Empty, ClientSize));
+                Point cursor = Cursor.Position;
+                bool insideX = cursor.X >= client.Left && cursor.X < client.Right;
+                // A little above the client top as well, so the reveal band is reachable when not maximized
+                bool atTopEdge = insideX && cursor.Y >= client.Top - Sc(2) &&
+                                 cursor.Y < client.Top + Sc(RevealBandPt);
+                bool overStrip = insideX && cursor.Y >= client.Top &&
+                                 cursor.Y < client.Top + _strip.StripHeight;
+
+                if (atTopEdge || (_strip.Visible && overStrip))
+                {
+                    visible = true;
+                    _hideCountdown = 0;
+                }
+                else if (_strip.Visible)
+                {
+                    _hideCountdown++;
+                    visible = _hideCountdown < AutoHideGraceTicks;
+                }
+                else
+                {
+                    visible = false;
+                }
+            }
+
+            if (visible == _strip.Visible) return;
+            _strip.Visible = visible;
+            if (visible) _strip.BringToFront();
+            _hideCountdown = 0;
+        }
+
+        private bool ActiveTabIsSession()
+        {
+            SessionTab tab = ActiveTab;
+            return tab != null && tab.Page is RdpSessionControl;
         }
 
         // ---------------- connection settings ----------------
@@ -402,18 +489,26 @@ namespace RdpTabs
             _strip.SetBounds(0, 0, ClientSize.Width, stripHeight);
             // Immersive: the session takes the whole client area and the strip floats on top of it, so the
             // remote desktop gets those pixels back and shows through the translucent strip.
-            int contentTop = _strip.Translucent ? 0 : stripHeight;
+            int contentTop = _strip.Overlay ? 0 : stripHeight;
             _content.SetBounds(0, contentTop, ClientSize.Width,
                 Math.Max(0, ClientSize.Height - contentTop));
-            if (_strip.Translucent) _strip.BringToFront();
+            if (_strip.Overlay && _strip.Visible) _strip.BringToFront();
             LayoutPages();
         }
 
         private void LayoutPages()
         {
             Rectangle area = new Rectangle(0, 0, _content.ClientSize.Width, _content.ClientSize.Height);
+            // In overlay mode only a session wants the strip on top of it. The new connection page has no
+            // remote picture to reclaim and its heading would end up underneath the strip, so it keeps its
+            // place below -- and resizing it costs nothing.
+            int inset = _strip.Overlay ? _strip.StripHeight : 0;
+            Rectangle belowStrip = new Rectangle(0, inset, area.Width, Math.Max(0, area.Height - inset));
             foreach (SessionTab tab in _tabs)
-                if (tab.Page != null) tab.Page.Bounds = area;
+            {
+                if (tab.Page == null) continue;
+                tab.Page.Bounds = tab.Page is RdpSessionControl ? area : belowStrip;
+            }
         }
 
         // ---------------- keyboard shortcuts (only while focus is not inside a remote session) ----------------
@@ -608,6 +703,7 @@ namespace RdpTabs
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            _autoHide.Stop();
             // No "there are active connections" confirmation on close: just disconnect and exit.
             // Server-side the sessions become "disconnected but still signed in", so nothing is lost.
             SaveWindowPlacement();

@@ -822,7 +822,7 @@ namespace RdpTabs
                 // beneath the strip, so falling through would reach the session instead of the frame -- the
                 // window would stop being draggable and the click would leak into the remote desktop. There we
                 // keep the message and start the drag ourselves in OnMouseDown.
-                m.Result = blank && !Translucent
+                m.Result = blank && !Overlay
                     ? (IntPtr)Native.HTTRANSPARENT
                     : (IntPtr)Native.HTCLIENT;
                 return;
@@ -832,42 +832,31 @@ namespace RdpTabs
 
         /// <summary>
         /// Overlay mode: the strip floats over the session, translucent, instead of taking a band of its own.
-        /// Must be set before the handle exists -- WS_EX_LAYERED is applied at creation.
         /// </summary>
-        public bool Translucent { get; private set; }
+        /// <summary>
+        /// Overlay mode: the session fills the client area and the strip sits on top of it instead of taking a
+        /// band of its own. Auto-hide needs this too -- otherwise showing and hiding the strip would resize the
+        /// session every time, and the remote resolution would be reset on every mouse move to the top.
+        /// </summary>
+        public bool Overlay { get; private set; }
 
-        /// <summary>Turns overlay mode on or off, recreating the handle so WS_EX_LAYERED can change.</summary>
-        public void SetTranslucent(bool value)
+        public void SetOverlay(bool value)
         {
-            if (Translucent == value) return;
-            Translucent = value;
-            if (IsHandleCreated) RecreateHandle();
+            if (Overlay == value) return;
+            Overlay = value;
             Invalidate();
         }
 
-        /// <summary>How opaque the floating strip is. 255 would defeat the point; too low and titles blur.</summary>
-        private const byte TranslucentAlpha = 224;
-
-        protected override CreateParams CreateParams
+        /// <summary>True while the user is mid-gesture, so auto-hide knows to stay put.</summary>
+        public bool IsBusy
         {
-            get
-            {
-                CreateParams cp = base.CreateParams;
-                if (Translucent) cp.ExStyle |= Native.WS_EX_LAYERED;
-                return cp;
-            }
-        }
-
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            if (Translucent) Native.SetWindowOpacity(Handle, TranslucentAlpha);
+            get { return _dragging || _mouseDownOnTab; }
         }
 
         /// <summary>In overlay mode the blank strip area has to drag or resize the frame explicitly.</summary>
         private bool TryFrameGesture(TabHit hit, MouseEventArgs e)
         {
-            if (!Translucent || e.Button != MouseButtons.Left) return false;
+            if (!Overlay || e.Button != MouseButtons.Left) return false;
             if (hit.Kind != TabHitKind.Empty && hit.Kind != TabHitKind.TopEdge) return false;
 
             Form form = FindForm();

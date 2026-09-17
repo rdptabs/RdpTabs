@@ -24,8 +24,8 @@ namespace RdpTabs
         public bool WindowMaximized;
         public ThemeMode Theme = ThemeMode.System;
 
-        /// <summary>Let the tab strip float translucently over the session instead of taking a band.</summary>
-        public bool ImmersiveStrip;
+        /// <summary>Hide the tab strip until the pointer reaches the top of the window.</summary>
+        public bool AutoHideStrip;
 
         /// <summary>Why loading failed (corrupt config etc). Surfaced by the UI; never blocks startup.</summary>
         public string LoadError { get; private set; }
@@ -63,7 +63,7 @@ namespace RdpTabs
                     if (profile != null) store.Recent.Add(profile);
                 }
 
-                store.ImmersiveStrip = root["immersiveStrip"].AsBool(false);
+                store.AutoHideStrip = root["autoHideStrip"].AsBool(false);
                 int themeValue = root["theme"].AsInt(0);
                 store.Theme = themeValue == 1 ? ThemeMode.Dark
                     : (themeValue == 2 ? ThemeMode.Light : ThemeMode.System);
@@ -102,7 +102,7 @@ namespace RdpTabs
             root["recent"] = recent;
 
             root.Set("theme", (int)Theme);
-            root.Set("immersiveStrip", ImmersiveStrip);
+            root.Set("autoHideStrip", AutoHideStrip);
 
             Json window = Json.NewObject();
             window.Set("x", WindowBounds.X);

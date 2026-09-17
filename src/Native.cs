@@ -22,31 +22,11 @@ namespace RdpTabs
         public const int HTCAPTION = 2;
         public const int HTTOP = 12;
 
-        // ---- layered child windows (Win8+ supports the style on child HWNDs) ----
-        public const int WS_EX_LAYERED = 0x00080000;
-        private const int LWA_ALPHA = 0x2;
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint colorKey, byte alpha, int flags);
-
         [DllImport("user32.dll")]
         private static extern bool ReleaseCapture();
 
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-
-        /// <summary>Uniform translucency for a window that already has WS_EX_LAYERED. 255 = opaque.</summary>
-        public static void SetWindowOpacity(IntPtr hwnd, byte alpha)
-        {
-            if (hwnd == IntPtr.Zero) return;
-            try
-            {
-                SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
-            }
-            catch (EntryPointNotFoundException)
-            {
-            }
-        }
 
         /// <summary>
         /// Hands a press that landed on a child control to the top-level window as a caption drag or an edge
