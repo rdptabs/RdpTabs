@@ -22,23 +22,97 @@ namespace RdpTabs
         public const int HTCAPTION = 2;
         public const int HTTOP = 12;
 
-        // ---- layered child windows (Win8+ supports the style on child HWNDs) ----
+        // ---- layered windows ----
         public const int WS_EX_LAYERED = 0x00080000;
-        private const int LWA_ALPHA = 0x2;
+        public const int WS_EX_NOACTIVATE = 0x08000000;
+        public const int WS_EX_TOOLWINDOW = 0x00000080;
+
+        private const int ULW_ALPHA = 0x2;
+        private const byte AC_SRC_OVER = 0;
+        private const byte AC_SRC_ALPHA = 1;
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        private struct BLENDFUNCTION
+        {
+            public byte BlendOp;
+            public byte BlendFlags;
+            public byte SourceConstantAlpha;
+            public byte AlphaFormat;
+        }
 
         [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint colorKey, byte alpha, int flags);
+        private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, IntPtr pptDst,
+            ref SIZE size, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION blend, int flags);
 
-        /// <summary>Uniform translucency for a window that already has WS_EX_LAYERED. 255 = opaque.</summary>
-        public static void SetWindowOpacity(IntPtr hwnd, byte alpha)
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SIZE
         {
-            if (hwnd == IntPtr.Zero) return;
+            public int Width;
+            public int Height;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteObject(IntPtr obj);
+
+        /// <summary>
+        /// Hands a premultiplied 32bpp bitmap to the compositor as the window's whole appearance. This is the
+        /// only way to get per-pixel alpha, and it only works on a top-level window -- on a child HWND the call
+        /// fails with ERROR_INVALID_PARAMETER (measured, not assumed).
+        /// </summary>
+        public static void PushLayeredSurface(IntPtr hwnd, System.Drawing.Bitmap bitmap)
+        {
+            if (hwnd == IntPtr.Zero || bitmap == null) return;
+            IntPtr screen = GetWindowDC(IntPtr.Zero);
+            IntPtr memory = IntPtr.Zero;
+            IntPtr section = IntPtr.Zero;
+            IntPtr previous = IntPtr.Zero;
             try
             {
-                SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
+                memory = CreateCompatibleDC(screen);
+                section = bitmap.GetHbitmap(System.Drawing.Color.FromArgb(0));
+                previous = SelectObject(memory, section);
+
+                SIZE size = new SIZE();
+                size.Width = bitmap.Width;
+                size.Height = bitmap.Height;
+                POINT origin = new POINT();
+                BLENDFUNCTION blend = new BLENDFUNCTION();
+                blend.BlendOp = AC_SRC_OVER;
+                blend.SourceConstantAlpha = 255;
+                blend.AlphaFormat = AC_SRC_ALPHA;
+
+                UpdateLayeredWindow(hwnd, IntPtr.Zero, IntPtr.Zero, ref size, memory, ref origin,
+                    0, ref blend, ULW_ALPHA);
             }
-            catch (EntryPointNotFoundException)
+            catch (Exception)
             {
+                // A failed repaint must never take the app down; the island simply keeps its old surface.
+            }
+            finally
+            {
+                if (memory != IntPtr.Zero)
+                {
+                    if (previous != IntPtr.Zero) SelectObject(memory, previous);
+                    DeleteDC(memory);
+                }
+                if (section != IntPtr.Zero) DeleteObject(section);
+                ReleaseDC(IntPtr.Zero, screen);
             }
         }
 

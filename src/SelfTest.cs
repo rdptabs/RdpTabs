@@ -375,21 +375,15 @@ namespace RdpTabs
         /// </summary>
         private static void CheckTabStrip()
         {
-            Form host = null;
+            ChromeTabStrip disposable = null;
             try
             {
-                host = new Form();
-                host.FormBorderStyle = FormBorderStyle.None;
-                host.ShowInTaskbar = false;
-                host.StartPosition = FormStartPosition.Manual;
-                host.Location = new Point(-4000, -4000);
-                host.BackColor = Theme.ActiveTab;
-
+                // The strip is a top-level layered window now, so it is not hosted inside anything: give it a
+                // size and interrogate its geometry directly, off-screen and never shown.
                 ChromeTabStrip strip = new ChromeTabStrip();
-                host.ClientSize = new Size(Dpi.Scale(1100), strip.StripHeight + Dpi.Scale(6));
-                strip.SetBounds(0, 0, host.ClientSize.Width, strip.StripHeight);
-                host.Controls.Add(strip);
-                host.Show();
+                disposable = strip;
+                strip.Location = new Point(-4000, -4000);
+                strip.Size = new Size(Dpi.Scale(1100), strip.StripHeight);
 
                 string[] titles = { "10.0.0.5", "srv-db-prod-01.corp.example.com", "jump-host", "New connection", "192.168.1.7" };
                 SessionState[] states =
@@ -436,17 +430,13 @@ namespace RdpTabs
                 problems += ExpectHit(strip, new Point(emptyX, 1),
                     TabHitKind.TopEdge, -1, "gap above blank area (resize)");
 
-                // DrawToBitmap, not PrintWindow: the strip is pure GDI+ owner drawing, so rendering the
-                // control directly is deterministic. PrintWindow on a small off-screen window sometimes
-                // came back completely black.
+                // Render through the real code path the compositor uses, so the preview is exactly what the
+                // island shows -- including the per-pixel alpha of the translucent background.
                 string png = Path.Combine(Path.GetTempPath(), "RdpTabs-tabstrip.png");
                 try
                 {
-                    using (Bitmap bitmap = new Bitmap(strip.Width, strip.Height))
-                    {
-                        strip.DrawToBitmap(bitmap, new Rectangle(0, 0, strip.Width, strip.Height));
+                    using (Bitmap bitmap = strip.RenderToBitmap())
                         bitmap.Save(png, ImageFormat.Png);
-                    }
                 }
                 catch (Exception ex)
                 {
@@ -464,11 +454,7 @@ namespace RdpTabs
             }
             finally
             {
-                if (host != null)
-                {
-                    host.Close();
-                    host.Dispose();
-                }
+                if (disposable != null) disposable.Dispose();
             }
         }
 

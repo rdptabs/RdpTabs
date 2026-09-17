@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
+using System.Drawing.Imaging;
 using System.Windows.Forms;
 
 namespace RdpTabs
@@ -55,7 +57,7 @@ namespace RdpTabs
     /// HTTRANSPARENT for the blank bits would hand the click to the remote desktop instead of to the frame, so
     /// the island keeps the message and starts the window drag itself -- see TryFrameGesture.
     /// </summary>
-    internal sealed class ChromeTabStrip : Control
+    internal sealed class ChromeTabStrip : Form
     {
         private readonly List<TabModel> _tabs = new List<TabModel>();
         private readonly System.Windows.Forms.Timer _anim = new System.Windows.Forms.Timer();
@@ -93,20 +95,29 @@ namespace RdpTabs
         /// <summary>The user is sliding the island sideways; the form decides where it may land.</summary>
         public event EventHandler<IslandMoveEventArgs> IslandMoved;
 
+        /// <summary>The island wants a different width; only the owner form can place it.</summary>
+        public event EventHandler PreferredWidthChanged;
+
         public ChromeTabStrip()
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
-                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            // A top-level layered window rather than a child control: only UpdateLayeredWindow offers
+            // per-pixel alpha, which is what lets the background be translucent while the labels stay solid.
+            // Verified the hard way -- the same call against a child HWND fails with ERROR_INVALID_PARAMETER.
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            AutoScaleMode = AutoScaleMode.None;
+            MinimizeBox = false;
+            MaximizeBox = false;
             SetStyle(ControlStyles.Selectable, false);
             TabStop = false;
-            BackColor = Theme.Frame;
             Font = Fonts.Tab;
 
             _anim.Interval = 80;
             _anim.Tick += delegate
             {
                 _spinAngle = (_spinAngle + 30) % 360;
-                Invalidate();
+                Repaint();
             };
 
             _tooltipDelay.Interval = 600;
@@ -137,7 +148,7 @@ namespace RdpTabs
                 if (clamped == _selectedIndex) return;
                 _selectedIndex = clamped;
                 EnsureVisible(_selectedIndex);
-                Invalidate();
+                Repaint();
             }
         }
 
@@ -159,7 +170,7 @@ namespace RdpTabs
             if (_selectedIndex >= index) _selectedIndex++;
             SyncAnimation();
             RequestParentLayout();
-            Invalidate();
+            Repaint();
         }
 
         public void RemoveAt(int index)
@@ -171,7 +182,7 @@ namespace RdpTabs
             _hover = TabHit.None;
             SyncAnimation();
             RequestParentLayout();
-            Invalidate();
+            Repaint();
         }
 
         /// <summary>
@@ -181,7 +192,7 @@ namespace RdpTabs
         /// </summary>
         private void RequestParentLayout()
         {
-            if (Parent != null) Parent.PerformLayout();
+            if (PreferredWidthChanged != null) PreferredWidthChanged(this, EventArgs.Empty);
         }
 
         public void MoveTab(int from, int to)
@@ -195,14 +206,14 @@ namespace RdpTabs
             if (_selectedIndex == from) _selectedIndex = to;
             else if (from < _selectedIndex && to >= _selectedIndex) _selectedIndex--;
             else if (from > _selectedIndex && to <= _selectedIndex) _selectedIndex++;
-            Invalidate();
+            Repaint();
         }
 
         /// <summary>A tab's title or status changed: repaint (and start/stop the "connecting" animation).</summary>
         public void RefreshTab(int index)
         {
             SyncAnimation();
-            Invalidate();
+            Repaint();
         }
 
         public int StripHeight
@@ -465,9 +476,9 @@ namespace RdpTabs
 
             if (_islandDragging)
             {
-                if (IslandMoved != null && Parent != null)
+                if (IslandMoved != null && Owner != null)
                 {
-                    Point wanted = Parent.PointToClient(
+                    Point wanted = Owner.PointToClient(
                         new Point(Cursor.Position.X - _islandGrabOffsetX, 0));
                     IslandMoved(this, new IslandMoveEventArgs(wanted.X, false));
                 }
@@ -502,7 +513,7 @@ namespace RdpTabs
                 _hover = hit;
                 // Always keep the default arrow cursor over the strip
                 RestartTooltip();
-                Invalidate();
+                Repaint();
             }
         }
 
@@ -511,7 +522,7 @@ namespace RdpTabs
             base.OnMouseLeave(e);
             _hover = TabHit.None;
             HideTooltip();
-            Invalidate();
+            Repaint();
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
@@ -552,7 +563,8 @@ namespace RdpTabs
             {
                 _islandDragging = false;
                 Capture = false;
-                if (IslandMoved != null) IslandMoved(this, new IslandMoveEventArgs(Left, true));
+                if (IslandMoved != null && Owner != null)
+                    IslandMoved(this, new IslandMoveEventArgs(Owner.PointToClient(Location).X, true));
                 return;
             }
 
@@ -595,14 +607,14 @@ namespace RdpTabs
             if (MaxScroll == 0) return;
             _scrollOffset -= Math.Sign(e.Delta) * (SlotWidth / 2);
             ClampScroll();
-            Invalidate();
+            Repaint();
         }
 
         private void RaiseTabSelected(int index)
         {
             _selectedIndex = index;
             EnsureVisible(index);
-            Invalidate();
+            Repaint();
             EventHandler<TabIndexEventArgs> handler = TabSelected;
             if (handler != null) handler(this, new TabIndexEventArgs(index));
         }
@@ -652,14 +664,39 @@ namespace RdpTabs
 
         // ---------------- painting ----------------
 
-        protected override void OnPaint(PaintEventArgs e)
+        /// <summary>
+        /// Renders the island into a premultiplied 32bpp surface. Outside the trapezoid stays fully
+        /// transparent, the trapezoid gets the background colour at the chosen alpha, and everything drawn on
+        /// top of it is opaque -- that split is the entire reason for compositing this ourselves.
+        /// </summary>
+        public Bitmap RenderToBitmap()
         {
             EnsureMetrics();
             ClampScroll();
+            Bitmap bitmap = new Bitmap(Math.Max(1, Width), Math.Max(1, Height), PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                g.Clear(Color.Transparent);
+                PaintIsland(g);
+            }
+            return bitmap;
+        }
 
-            Graphics g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Theme.Frame);
+        /// <summary>Re-renders and hands the surface to the compositor; replaces Invalidate for this window.</summary>
+        private void Repaint()
+        {
+            if (!IsHandleCreated || !Visible || Width <= 0 || Height <= 0) return;
+            using (Bitmap bitmap = RenderToBitmap())
+                Native.PushLayeredSurface(Handle, bitmap);
+        }
+
+        private void PaintIsland(Graphics g)
+        {
+            using (GraphicsPath island = IslandPath())
+            using (SolidBrush brush = new SolidBrush(Color.FromArgb(_islandAlpha, Theme.Frame)))
+                g.FillPath(brush, island);
 
             GraphicsState state = g.Save();
             g.IntersectClip(new Rectangle(0, 0, Math.Max(0, TabAreaRight + _shoulder), _stripHeight));
@@ -676,6 +713,24 @@ namespace RdpTabs
 
             DrawNewTabButton(g);
             DrawWindowButtons(g);
+        }
+
+        /// <summary>
+        /// The inverted trapezoid: wide along the top, leaning in towards the bottom. Per-pixel alpha makes the
+        /// slanted sides anti-aliased, unlike the hard-edged region this needed before.
+        /// </summary>
+        private GraphicsPath IslandPath()
+        {
+            int slant = Math.Min(_slant, Width / 4);
+            GraphicsPath path = new GraphicsPath();
+            path.AddPolygon(new Point[]
+            {
+                new Point(0, 0),
+                new Point(Width, 0),
+                new Point(Width - slant, Height),
+                new Point(slant, Height)
+            });
+            return path;
         }
 
         private void DrawSeparators(Graphics g)
@@ -857,12 +912,12 @@ namespace RdpTabs
 
         private byte _islandAlpha = DefaultIslandAlpha;
 
-        /// <summary>0 would be invisible, so the settings page clamps well above that.</summary>
+        /// <summary>Only the background fill takes this alpha; labels and glyphs stay opaque.</summary>
         public void SetOpacityPercent(int percent)
         {
-            percent = Math.Max(30, Math.Min(100, percent));
+            percent = Math.Max(0, Math.Min(100, percent));
             _islandAlpha = (byte)Math.Round(percent * 255 / 100.0);
-            if (IsHandleCreated) Native.SetWindowOpacity(Handle, _islandAlpha);
+            Repaint();
         }
 
         protected override CreateParams CreateParams
@@ -870,49 +925,19 @@ namespace RdpTabs
             get
             {
                 CreateParams cp = base.CreateParams;
-                cp.ExStyle |= Native.WS_EX_LAYERED;
+                // NOACTIVATE so clicking the island never pulls focus off the remote session; TOOLWINDOW keeps
+                // it out of the taskbar and out of Alt+Tab.
+                cp.ExStyle |= Native.WS_EX_LAYERED | Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW;
                 return cp;
             }
-        }
-
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            Native.SetWindowOpacity(Handle, _islandAlpha);
-            UpdateIslandRegion();
         }
 
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            UpdateIslandRegion();
+            Repaint();
         }
 
-        /// <summary>
-        /// Clips the island to an inverted trapezoid: wide along the top edge of the window, leaning in towards
-        /// the bottom. A layered child window only offers one alpha for the whole surface, so the silhouette has
-        /// to come from a region rather than from per-pixel transparency -- which is also why the slanted sides
-        /// are hard-edged instead of anti-aliased.
-        /// </summary>
-        private void UpdateIslandRegion()
-        {
-            if (!IsHandleCreated || Width <= 0 || Height <= 0) return;
-            EnsureMetrics();
-            int slant = Math.Min(_slant, Width / 4);
-            Region previous = Region;
-            using (GraphicsPath path = new GraphicsPath())
-            {
-                path.AddPolygon(new Point[]
-                {
-                    new Point(0, 0),
-                    new Point(Width, 0),
-                    new Point(Width - slant, Height),
-                    new Point(slant, Height)
-                });
-                Region = new Region(path);
-            }
-            if (previous != null) previous.Dispose();
-        }
 
         /// <summary>True while the user is mid-gesture, so auto-hide knows to stay put.</summary>
         public bool IsBusy
@@ -942,7 +967,7 @@ namespace RdpTabs
             if (e.Button != MouseButtons.Left) return false;
             if (hit.Kind != TabHitKind.Empty && hit.Kind != TabHitKind.TopEdge) return false;
 
-            Form form = FindForm();
+            Form form = Owner;
             if (form == null) return false;
 
             // Has to be decided before the drag starts: BeginFrameDrag does not return until the drag loop

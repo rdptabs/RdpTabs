@@ -61,7 +61,8 @@ namespace RdpTabs
             _strip.TabContextMenuRequested += OnTabContextMenu;
             _strip.WindowCommandRequested += OnWindowCommand;
             _strip.IslandMoved += OnIslandMoved;
-            Controls.Add(_strip);
+            _strip.PreferredWidthChanged += delegate { LayoutIsland(); };
+
 
             RestoreWindowPlacement();
             AddNewTabPage(true);
@@ -499,27 +500,61 @@ namespace RdpTabs
 
         /// <summary>
         /// Sizes the island to its contents and places it along the top at the remembered ratio, clamped so it
-        /// always stays fully inside the window.
+        /// always stays fully inside the window. The island is a separate top-level window, so its bounds are
+        /// in screen coordinates -- everything else here works in the form's client space.
         /// </summary>
         private void LayoutIsland()
         {
+            if (!IsHandleCreated || WindowState == FormWindowState.Minimized) return;
             int height = _strip.StripHeight;
             int width = Math.Min(ClientSize.Width, _strip.PreferredWidth);
-            // While the user is dragging, only the size may change: recomputing the position from the stored
-            // permille would snap the island back to that grid and fight the drag.
-            int left = _strip.IsDraggingIsland
-                ? Math.Max(0, Math.Min(_strip.Left, ClientSize.Width - width))
-                : Math.Max(0, Math.Min(
-                      (int)Math.Round(ClientSize.Width * (_store.IslandCenterPermille / 1000.0)) - width / 2,
-                      ClientSize.Width - width));
-            _strip.SetBounds(left, 0, width, height);
+            int left;
+            if (_strip.IsDraggingIsland)
+            {
+                // Mid-drag only the size may change: recomputing the position from the stored permille would
+                // snap the island back onto that grid and fight the drag.
+                left = PointToClient(_strip.Location).X;
+            }
+            else
+            {
+                left = (int)Math.Round(ClientSize.Width * (_store.IslandCenterPermille / 1000.0)) - width / 2;
+            }
+            left = Math.Max(0, Math.Min(left, ClientSize.Width - width));
+            _strip.Bounds = RectangleToScreen(new Rectangle(left, 0, width, height));
+        }
+
+        protected override void OnMove(EventArgs e)
+        {
+            base.OnMove(e);
+            LayoutIsland();
+        }
+
+        /// <summary>
+        /// Brings the island up as an owned window: owned so it always floats above this form and never above
+        /// other apps, and so it disappears with us when minimised.
+        /// </summary>
+        private void ShowIsland()
+        {
+            if (_strip.Owner == this) return;
+            _strip.Owner = this;
+            LayoutIsland();
+            _strip.Show();
+            SyncAutoHide();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            _autoHide.Stop();
+            if (!_strip.IsDisposed) _strip.Close();
+            base.OnFormClosed(e);
         }
 
         private void OnIslandMoved(object sender, IslandMoveEventArgs e)
         {
             int width = _strip.Width;
             int left = Math.Max(0, Math.Min(e.DesiredLeft, ClientSize.Width - width));
-            if (left != _strip.Left) _strip.Left = left;
+            Point screen = PointToScreen(new Point(left, 0));
+            if (screen.X != _strip.Left) _strip.Left = screen.X;
             if (ClientSize.Width > 0)
             {
                 double centre = (left + width / 2.0) / ClientSize.Width;
@@ -598,6 +633,7 @@ namespace RdpTabs
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            ShowIsland();
             FocusActivePage();
             if (_startupProfiles.Count == 0) return;
 
