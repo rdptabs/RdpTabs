@@ -54,7 +54,8 @@ namespace RdpTabs
     /// the window buttons.
     /// Blank areas return HTTRANSPARENT so hit-testing falls through to the parent window, which reuses the
     /// native drag / snap / double-click-to-maximize / edge-resize behaviour (see MainForm's WM_NCHITTEST and
-    /// WM_NCCALCSIZE).
+    /// WM_NCCALCSIZE). In overlay mode that fallthrough would land on the session instead, so the strip keeps
+    /// the message and starts the frame gesture itself -- see TryFrameGesture.
     /// </summary>
     internal sealed class ChromeTabStrip : Control
     {
@@ -497,6 +498,8 @@ namespace RdpTabs
             HideTooltip();
             TabHit hit = HitTest(e.Location);
 
+            if (TryFrameGesture(hit, e)) return;
+
             if (e.Button == MouseButtons.Left && hit.Kind == TabHitKind.Tab)
             {
                 if (hit.Index != _selectedIndex) RaiseTabSelected(hit.Index);
@@ -813,13 +816,76 @@ namespace RdpTabs
             {
                 Point screen = new Point(Native.LoWord(m.LParam), Native.HiWord(m.LParam));
                 TabHit hit = HitTest(PointToClient(screen));
-                // HTTRANSPARENT: hit-testing falls through to the parent, which returns HTCAPTION / HTTOP
-                m.Result = hit.Kind == TabHitKind.Empty || hit.Kind == TabHitKind.TopEdge
+                bool blank = hit.Kind == TabHitKind.Empty || hit.Kind == TabHitKind.TopEdge;
+                // Normally HTTRANSPARENT lets hit-testing fall through to the parent, which answers
+                // HTCAPTION / HTTOP. In overlay mode the session fills the client area and sits directly
+                // beneath the strip, so falling through would reach the session instead of the frame -- the
+                // window would stop being draggable and the click would leak into the remote desktop. There we
+                // keep the message and start the drag ourselves in OnMouseDown.
+                m.Result = blank && !Translucent
                     ? (IntPtr)Native.HTTRANSPARENT
                     : (IntPtr)Native.HTCLIENT;
                 return;
             }
             base.WndProc(ref m);
+        }
+
+        /// <summary>
+        /// Overlay mode: the strip floats over the session, translucent, instead of taking a band of its own.
+        /// Must be set before the handle exists -- WS_EX_LAYERED is applied at creation.
+        /// </summary>
+        public bool Translucent { get; private set; }
+
+        /// <summary>Turns overlay mode on or off, recreating the handle so WS_EX_LAYERED can change.</summary>
+        public void SetTranslucent(bool value)
+        {
+            if (Translucent == value) return;
+            Translucent = value;
+            if (IsHandleCreated) RecreateHandle();
+            Invalidate();
+        }
+
+        /// <summary>How opaque the floating strip is. 255 would defeat the point; too low and titles blur.</summary>
+        private const byte TranslucentAlpha = 224;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                if (Translucent) cp.ExStyle |= Native.WS_EX_LAYERED;
+                return cp;
+            }
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            if (Translucent) Native.SetWindowOpacity(Handle, TranslucentAlpha);
+        }
+
+        /// <summary>In overlay mode the blank strip area has to drag or resize the frame explicitly.</summary>
+        private bool TryFrameGesture(TabHit hit, MouseEventArgs e)
+        {
+            if (!Translucent || e.Button != MouseButtons.Left) return false;
+            if (hit.Kind != TabHitKind.Empty && hit.Kind != TabHitKind.TopEdge) return false;
+
+            Form form = FindForm();
+            if (form == null) return false;
+
+            // Has to be decided before the drag starts: BeginFrameDrag does not return until the drag loop
+            // ends, so the second click of a double-click would only ever start another drag.
+            if (e.Clicks >= 2 && hit.Kind == TabHitKind.Empty)
+            {
+                RaiseWindowCommand(WindowCommand.MaximizeOrRestore);
+                return true;
+            }
+
+            Point screen = PointToScreen(e.Location);
+            Native.BeginFrameDrag(form.Handle,
+                hit.Kind == TabHitKind.TopEdge ? Native.HTTOP : Native.HTCAPTION,
+                screen.X, screen.Y);
+            return true;
         }
 
         protected override void Dispose(bool disposing)

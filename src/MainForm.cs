@@ -42,6 +42,8 @@ namespace RdpTabs
             _content.BackColor = Theme.ActiveTab;
             Controls.Add(_content);
 
+            _strip.SetTranslucent(_store.ImmersiveStrip);
+
             _strip.TabSelected += OnTabSelected;
             _strip.TabCloseRequested += OnTabCloseRequested;
             _strip.NewTabRequested += delegate { AddNewTabPage(true); };
@@ -297,6 +299,11 @@ namespace RdpTabs
                 menu.Items.Add(new ToolStripSeparator());
             }
 
+            ToolStripMenuItem immersive = Menus.Item("Immersive tab bar", delegate { ToggleImmersive(); });
+            immersive.Checked = _strip.Translucent;
+            menu.Items.Add(immersive);
+            menu.Items.Add(new ToolStripSeparator());
+
             menu.Items.Add(Menus.Item("Close tab", delegate { CloseTab(index); }));
             if (_tabs.Count > 1)
             {
@@ -308,6 +315,15 @@ namespace RdpTabs
             }
 
             menu.Show(e.ScreenLocation);
+        }
+
+        private void ToggleImmersive()
+        {
+            _strip.SetTranslucent(!_strip.Translucent);
+            _store.ImmersiveStrip = _strip.Translucent;
+            _store.Save();
+            PerformLayout();
+            _strip.Invalidate();
         }
 
         // ---------------- connection settings ----------------
@@ -384,8 +400,12 @@ namespace RdpTabs
             base.OnLayout(e);
             int stripHeight = _strip.StripHeight;
             _strip.SetBounds(0, 0, ClientSize.Width, stripHeight);
-            _content.SetBounds(0, stripHeight, ClientSize.Width,
-                Math.Max(0, ClientSize.Height - stripHeight));
+            // Immersive: the session takes the whole client area and the strip floats on top of it, so the
+            // remote desktop gets those pixels back and shows through the translucent strip.
+            int contentTop = _strip.Translucent ? 0 : stripHeight;
+            _content.SetBounds(0, contentTop, ClientSize.Width,
+                Math.Max(0, ClientSize.Height - contentTop));
+            if (_strip.Translucent) _strip.BringToFront();
             LayoutPages();
         }
 
