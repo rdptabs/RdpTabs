@@ -47,7 +47,7 @@ namespace RdpTabs
             MinimumSize = new Size(Sc(760), Sc(480));
             DoubleBuffered = true;
 
-            _content.BackColor = Theme.ActiveTab;
+            _content.BackColor = Theme.PageBackground;   // matches the Home page, so no seam under the island
             Controls.Add(_content);
 
             _strip.SetOpacityPercent(_store.IslandOpacityPercent);
@@ -603,15 +603,17 @@ namespace RdpTabs
         private void LayoutPages()
         {
             Rectangle area = new Rectangle(0, 0, _content.ClientSize.Width, _content.ClientSize.Height);
-            // In overlay mode only a session wants the strip on top of it. The new connection page has no
-            // remote picture to reclaim and its heading would end up underneath the strip, so it keeps its
-            // place below -- and resizing it costs nothing.
+            // Every page fills the whole area, including the band the island floats over: the pages are stacked
+            // and only reordered by z, so a page that stopped below the island would let the session behind it
+            // show through up there. The Home page keeps its content clear of the island with a top inset
+            // instead, which still paints its own background across that band.
             int inset = _strip.StripHeight;
-            Rectangle belowStrip = new Rectangle(0, inset, area.Width, Math.Max(0, area.Height - inset));
             foreach (SessionTab tab in _tabs)
             {
                 if (tab.Page == null) continue;
-                tab.Page.Bounds = tab.Page is RdpSessionControl ? area : belowStrip;
+                tab.Page.Bounds = area;
+                NewTabPage home = tab.Page as NewTabPage;
+                if (home != null) home.TopInset = inset;
             }
         }
 

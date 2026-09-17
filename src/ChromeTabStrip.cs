@@ -15,6 +15,8 @@ namespace RdpTabs
         TopEdge,     // the thin gap on top: handed to the window for vertical resizing
         Tab,
         TabClose,
+        WindowMinimize,
+        WindowMaximize,
         WindowClose
     }
 
@@ -298,7 +300,7 @@ namespace RdpTabs
             get
             {
                 EnsureMetrics();
-                return Width - _slant - _windowButtonWidth;
+                return Width - _slant - _windowButtonWidth * 3;
             }
         }
 
@@ -423,7 +425,10 @@ namespace RdpTabs
         {
             EnsureMetrics();
 
-            if (WindowButtonRect(0).Contains(point)) return new TabHit(TabHitKind.WindowClose, -1);
+            for (int slot = 0; slot < 3; slot++)
+            {
+                if (WindowButtonRect(slot).Contains(point)) return new TabHit(WindowButtonKind(slot), -1);
+            }
 
             // The active tab is on top, so test it first
             if (_selectedIndex >= 0)
@@ -574,6 +579,12 @@ namespace RdpTabs
             {
                 case TabHitKind.TabClose:
                     RaiseCloseRequested(hit.Index);
+                    break;
+                case TabHitKind.WindowMinimize:
+                    RaiseWindowCommand(WindowCommand.Minimize);
+                    break;
+                case TabHitKind.WindowMaximize:
+                    RaiseWindowCommand(WindowCommand.MaximizeOrRestore);
                     break;
                 case TabHitKind.WindowClose:
                     RaiseWindowCommand(WindowCommand.Close);
@@ -821,44 +832,63 @@ namespace RdpTabs
             return path;
         }
 
-        /// <summary>
-        /// Only a close button: minimize and maximize are gone. Double-clicking the island's blank area still
-        /// maximizes, and the taskbar handles minimizing.
-        /// </summary>
-        private void DrawWindowButtons(Graphics g)
+        private static TabHitKind WindowButtonKind(int slot)
         {
-            Rectangle box = WindowButtonRect(0);
-            bool hovered = _hover.Kind == TabHitKind.WindowClose;
-            if (hovered)
-            {
-                using (SolidBrush brush = new SolidBrush(Theme.WindowCloseHover))
-                    g.FillRectangle(brush, box);
-            }
-
-            float glyph = Math.Max(8f, _windowButtonWidth * 0.22f);
-            Draw.DrawCross(g, new RectangleF(box.X + (box.Width - glyph) / 2f,
-                    box.Y + (box.Height - glyph) / 2f, glyph, glyph),
-                hovered ? Color.White : Theme.TextDim, Math.Max(1f, _dpi / 96f));
+            return slot == 0 ? TabHitKind.WindowMinimize
+                : (slot == 1 ? TabHitKind.WindowMaximize : TabHitKind.WindowClose);
         }
 
-        // ---------------- turn blank areas into window caption ----------------
-
-        protected override void WndProc(ref Message m)
+        private void DrawWindowButtons(Graphics g)
         {
-            if (m.Msg == Native.WM_NCHITTEST)
+            for (int slot = 0; slot < 3; slot++)
             {
-                Point screen = new Point(Native.LoWord(m.LParam), Native.HiWord(m.LParam));
-                TabHit hit = HitTest(PointToClient(screen));
-                bool blank = hit.Kind == TabHitKind.Empty || hit.Kind == TabHitKind.TopEdge;
-                // Normally HTTRANSPARENT lets hit-testing fall through to the parent, which answers
-                // HTCAPTION / HTTOP. In overlay mode the session fills the client area and sits directly
-                // beneath the strip, so falling through would reach the session instead of the frame -- the
-                // window would stop being draggable and the click would leak into the remote desktop. There we
-                // keep the message and start the drag ourselves in OnMouseDown.
-                m.Result = (IntPtr)Native.HTCLIENT;
-                return;
+                TabHitKind kind = WindowButtonKind(slot);
+                Rectangle box = WindowButtonRect(slot);
+                bool hovered = _hover.Kind == kind;
+
+                if (hovered)
+                {
+                    Color background = kind == TabHitKind.WindowClose
+                        ? Theme.WindowCloseHover : Theme.WindowButtonHover;
+                    using (SolidBrush brush = new SolidBrush(background))
+                        g.FillRectangle(brush, box);
+                }
+
+                Color foreground = hovered && kind == TabHitKind.WindowClose ? Color.White : Theme.TextDim;
+                float glyph = Math.Max(8f, _windowButtonWidth * 0.22f);
+                float cx = box.X + box.Width / 2f;
+                float cy = box.Y + box.Height / 2f;
+                float half = glyph / 2f;
+                float width = Math.Max(1f, _dpi / 96f);
+
+                if (kind == TabHitKind.WindowMinimize)
+                {
+                    using (Pen pen = new Pen(foreground, width))
+                        g.DrawLine(pen, cx - half, cy, cx + half, cy);
+                }
+                else if (kind == TabHitKind.WindowMaximize)
+                {
+                    // The island is its own window now, so the state to reflect is the owner's, not ours.
+                    bool maximized = Owner != null && Owner.WindowState == FormWindowState.Maximized;
+                    using (Pen pen = new Pen(foreground, width))
+                    {
+                        if (maximized)
+                        {
+                            g.DrawRectangle(pen, cx - half, cy - half + 2f, glyph - 2f, glyph - 2f);
+                            g.DrawLine(pen, cx - half + 2f, cy - half, cx + half, cy - half);
+                            g.DrawLine(pen, cx + half, cy - half, cx + half, cy + half - 2f);
+                        }
+                        else
+                        {
+                            g.DrawRectangle(pen, cx - half, cy - half, glyph, glyph);
+                        }
+                    }
+                }
+                else
+                {
+                    Draw.DrawCross(g, new RectangleF(cx - half, cy - half, glyph, glyph), foreground, width);
+                }
             }
-            base.WndProc(ref m);
         }
 
         /// <summary>
@@ -877,7 +907,7 @@ namespace RdpTabs
                 float s = _dpi / 96f;
                 int slot = _slotMax;
                 int tabs = _tabs.Count <= 1 ? slot : slot + (_tabs.Count - 1) * (slot - _shoulder);
-                return TabsLeft + tabs + Scale(6, s) + _windowButtonWidth + _slant;
+                return TabsLeft + tabs + Scale(6, s) + _windowButtonWidth * 3 + _slant;
             }
         }
 

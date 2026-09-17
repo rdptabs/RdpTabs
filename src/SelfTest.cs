@@ -424,6 +424,10 @@ namespace RdpTabs
                         TabHitKind.Tab, i, "gap above tab " + i + "");
                 }
                 problems += ExpectHit(strip, Center(strip.WindowButtonBounds(0)),
+                    TabHitKind.WindowMinimize, -1, "minimize button");
+                problems += ExpectHit(strip, Center(strip.WindowButtonBounds(1)),
+                    TabHitKind.WindowMaximize, -1, "maximize button");
+                problems += ExpectHit(strip, Center(strip.WindowButtonBounds(2)),
                     TabHitKind.WindowClose, -1, "window close button");
 
                 // Between the last tab and the close button: the island's own grab area

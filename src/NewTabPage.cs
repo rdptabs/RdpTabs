@@ -191,6 +191,7 @@ namespace RdpTabs
         private Rectangle _themeLabelRect;
         private Rectangle _opacityLabelRect;
         private Rectangle _opacityValueRect;
+        private int _topInset;
         private readonly SliderBar _opacitySlider = new SliderBar();
         private Rectangle _headingRect;
         private Rectangle _subtitleRect;
@@ -204,6 +205,23 @@ namespace RdpTabs
         public event EventHandler<ProfileEventArgs> DeleteRequested;
         public event EventHandler<ThemeModeEventArgs> ThemeChangeRequested;
         public event EventHandler<OpacityEventArgs> OpacityChangeRequested;
+
+        /// <summary>
+        /// Blank room to leave along the top, so the heading clears the floating tab island. The page still
+        /// fills the whole content area -- if it stopped below the island, the session page stacked behind it
+        /// would show through that band, taskbar and all.
+        /// </summary>
+        public int TopInset
+        {
+            get { return _topInset; }
+            set
+            {
+                if (_topInset == value) return;
+                _topInset = value;
+                PerformLayout();
+                Invalidate();
+            }
+        }
 
         public NewTabPage(ProfileStore store)
         {
@@ -455,7 +473,7 @@ namespace RdpTabs
             int contentWidth = Math.Min(Sc(MaxContentWidth), Math.Max(Sc(320), ClientSize.Width - Sc(96)));
             int left = Math.Max(Sc(24), (ClientSize.Width - contentWidth) / 2);
             Point scroll = AutoScrollPosition;   // with AutoScroll, child coordinates include the scroll offset
-            int y = Sc(56);
+            int y = TopInset + Sc(56);
 
             _headingRect = MeasureRow(left, y, contentWidth, HeadingText, Fonts.Heading, false);
             y = _headingRect.Bottom + Sc(6);
