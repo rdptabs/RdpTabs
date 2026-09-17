@@ -43,7 +43,7 @@ namespace RdpTabs
             Text = "RdpTabs - Remote Desktop with tabs";
             Font = Fonts.Body;
             AutoScaleMode = AutoScaleMode.None;   // all scaling goes through Dpi.Scale; no WinForms layer on top
-            BackColor = Theme.ActiveTab;
+            BackColor = Theme.PageBackground;
             FormBorderStyle = FormBorderStyle.Sizable;   // keep native snap/resize/rounded corners; the caption is removed in WM_NCCALCSIZE
             MinimumSize = new Size(Sc(760), Sc(480));
             DoubleBuffered = true;
@@ -747,9 +747,8 @@ namespace RdpTabs
         private void ApplyTheme()
         {
             Native.SetAppDarkMode(Theme.IsDark);
-            BackColor = Theme.ActiveTab;
-            _content.BackColor = Theme.ActiveTab;
-            _strip.BackColor = Theme.Frame;
+            BackColor = Theme.PageBackground;
+            _content.BackColor = Theme.PageBackground;   // must match the pages, or a seam shows under the island
 
             foreach (SessionTab tab in _tabs)
             {
@@ -757,7 +756,9 @@ namespace RdpTabs
                 if (page != null) page.ApplyTheme();
                 if (tab.Session != null) tab.Session.ApplyTheme();
             }
-            _strip.Invalidate();
+            // Re-clamp: the light palette needs a mostly opaque island, the dark one does not. This also
+            // repaints the island, which Invalidate cannot do for a layered window.
+            _strip.SetOpacityPercent(_store.IslandOpacityPercent);
             Invalidate(true);
         }
 

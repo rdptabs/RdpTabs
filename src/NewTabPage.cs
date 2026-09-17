@@ -268,7 +268,7 @@ namespace RdpTabs
             }
             SyncThemeButtons();
 
-            _opacitySlider.Minimum = 0;
+            _opacitySlider.Minimum = Theme.MinIslandOpacityPercent;
             _opacitySlider.Maximum = 100;
             _opacitySlider.SetValueQuietly(_store.IslandOpacityPercent);
             _opacitySlider.ValueChanged += delegate
@@ -315,6 +315,11 @@ namespace RdpTabs
         /// <summary>Re-applies colors to every child after a theme change.</summary>
         public void ApplyTheme()
         {
+            // The floor moves with the theme, so the slider must not keep offering a value that would make the
+            // labels unreadable.
+            _opacitySlider.Minimum = Theme.MinIslandOpacityPercent;
+            if (_opacitySlider.Value < _opacitySlider.Minimum)
+                _opacitySlider.SetValueQuietly(_opacitySlider.Minimum);
             BackColor = Theme.PageBackground;
             Native.UseThemedScrollbars(Handle, Theme.IsDark);
             _quickFrame.ApplyTheme();

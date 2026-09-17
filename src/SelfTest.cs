@@ -448,6 +448,22 @@ namespace RdpTabs
                 problems += ExpectHit(strip, new Point(emptyX, 1),
                     TabHitKind.TopEdge, -1, "gap above blank area (resize)");
 
+                // The opacity floor keeps the labels readable: a light palette draws dark glyphs, which need a
+                // mostly opaque bar under them however see-through the user asks for.
+                strip.SetOpacityPercent(0);
+                using (Bitmap faded = strip.RenderToBitmap())
+                {
+                    int expected = (int)Math.Round(Theme.MinIslandOpacityPercent * 255 / 100.0);
+                    int actual = faded.GetPixel(faded.Width / 2, 2).A;
+                    if (Math.Abs(actual - expected) > 1)
+                    {
+                        problems++;
+                        Line("  ! opacity floor not applied: asked for 0%, got alpha " + actual +
+                             ", expected " + expected + " for the " + (Theme.IsDark ? "dark" : "light") + " palette");
+                    }
+                }
+                strip.SetOpacityPercent(92);
+
                 // Band mode (the windowed look) must be a plain opaque rectangle: no slant, no transparency.
                 strip.IslandMode = false;
                 using (Bitmap band = strip.RenderToBitmap())

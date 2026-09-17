@@ -89,6 +89,17 @@ namespace RdpTabs
     {
         public static bool IsDark { get; private set; }
 
+        /// <summary>
+        /// How see-through the floating tab island may get, per theme. The palette picks text colours for an
+        /// opaque surface: dark glyphs on a light bar, light glyphs on a dark one. Let a light bar fade towards
+        /// a dark remote desktop and its dark text ends up on a dark background -- unreadable. Dark themes do
+        /// not have that problem, so they can go much further.
+        /// </summary>
+        public static int MinIslandOpacityPercent
+        {
+            get { return IsDark ? 20 : 80; }
+        }
+
         /// <summary>The user's choice: follow the system, force dark, or force light.</summary>
         public static ThemeMode Mode { get; private set; }
 

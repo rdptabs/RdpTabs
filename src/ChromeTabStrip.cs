@@ -962,9 +962,15 @@ namespace RdpTabs
         /// <summary>Only the background fill takes this alpha; labels and glyphs stay opaque.</summary>
         public void SetOpacityPercent(int percent)
         {
-            percent = Math.Max(0, Math.Min(100, percent));
+            percent = Math.Max(Theme.MinIslandOpacityPercent, Math.Min(100, percent));
             _islandAlpha = (byte)Math.Round(percent * 255 / 100.0);
             Repaint();
+        }
+
+        /// <summary>Re-clamps for the current theme; the floor differs between light and dark.</summary>
+        public void ReapplyOpacity(int percent)
+        {
+            SetOpacityPercent(percent);
         }
 
         protected override CreateParams CreateParams
