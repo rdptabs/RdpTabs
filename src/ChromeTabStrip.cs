@@ -262,7 +262,7 @@ namespace RdpTabs
             _dragThreshold = Scale(5, s);
             // How far each side leans in towards the bottom, giving the island its inverted-trapezoid
             // silhouette. The tab area and the window buttons are inset by it so nothing gets clipped.
-            _slant = Scale(10, s);
+            _slant = Scale(18, s);
         }
 
         private static int Scale(int value, float factor)
