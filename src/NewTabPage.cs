@@ -11,9 +11,13 @@ namespace RdpTabs
     {
         public readonly int Percent;
 
-        public OpacityEventArgs(int percent)
+        /// <summary>False while the slider is still being dragged, true once the user lets go.</summary>
+        public readonly bool Committed;
+
+        public OpacityEventArgs(int percent, bool committed)
         {
             Percent = percent;
+            Committed = committed;
         }
     }
 
@@ -186,8 +190,8 @@ namespace RdpTabs
 
         private Rectangle _themeLabelRect;
         private Rectangle _opacityLabelRect;
-        private static readonly int[] OpacitySteps = { 100, 92, 84, 76 };
-        private readonly FlatButton[] _opacityButtons = new FlatButton[OpacitySteps.Length];
+        private Rectangle _opacityValueRect;
+        private readonly SliderBar _opacitySlider = new SliderBar();
         private Rectangle _headingRect;
         private Rectangle _subtitleRect;
         private Rectangle _savedLabelRect;
@@ -246,21 +250,16 @@ namespace RdpTabs
             }
             SyncThemeButtons();
 
-            for (int i = 0; i < _opacityButtons.Length; i++)
+            _opacitySlider.Minimum = 0;
+            _opacitySlider.Maximum = 100;
+            _opacitySlider.SetValueQuietly(_store.IslandOpacityPercent);
+            _opacitySlider.ValueChanged += delegate
             {
-                int percent = OpacitySteps[i];
-                FlatButton button = new FlatButton();
-                button.Text = percent + "%";
-                button.Font = Fonts.Body;
-                button.Click += delegate
-                {
-                    EventHandler<OpacityEventArgs> handler = OpacityChangeRequested;
-                    if (handler != null) handler(this, new OpacityEventArgs(percent));
-                };
-                _opacityButtons[i] = button;
-                Controls.Add(button);
-            }
-            SyncOpacityButtons();
+                Invalidate();                    // repaint the percentage next to the slider
+                Raise(false);
+            };
+            _opacitySlider.ValueCommitted += delegate { Raise(true); };
+            Controls.Add(_opacitySlider);
 
             BuildCards();
         }
@@ -276,22 +275,17 @@ namespace RdpTabs
             if (_quickInput.CanFocus) _quickInput.Focus();
         }
 
-        /// <summary>Marks whichever step is closest to the stored percentage.</summary>
+        /// <summary>Pulls the slider back in line with the stored value.</summary>
         public void SyncOpacityButtons()
         {
-            int best = 0;
-            for (int i = 1; i < OpacitySteps.Length; i++)
-            {
-                if (Math.Abs(OpacitySteps[i] - _store.IslandOpacityPercent) <
-                    Math.Abs(OpacitySteps[best] - _store.IslandOpacityPercent))
-                    best = i;
-            }
-            for (int i = 0; i < _opacityButtons.Length; i++)
-            {
-                if (_opacityButtons[i] == null) continue;
-                _opacityButtons[i].Primary = i == best;
-                _opacityButtons[i].Invalidate();
-            }
+            _opacitySlider.SetValueQuietly(_store.IslandOpacityPercent);
+            Invalidate();
+        }
+
+        private void Raise(bool committed)
+        {
+            EventHandler<OpacityEventArgs> handler = OpacityChangeRequested;
+            if (handler != null) handler(this, new OpacityEventArgs(_opacitySlider.Value, committed));
         }
 
         private void SyncThemeButtons()
@@ -536,12 +530,11 @@ namespace RdpTabs
             y += Sc(42);
             _opacityLabelRect = MeasureRow(left, y + Sc(6), contentWidth, OpacityLabelText, Fonts.BodyBold, false);
             int opacityLeft = left + labelColumn + gap * 2;
-            foreach (FlatButton button in _opacityButtons)
-            {
-                button.SizeToText(Sc(14));
-                button.SetBounds(opacityLeft + scroll.X, y + scroll.Y, button.Width, Sc(30));
-                opacityLeft += button.Width + Sc(6);
-            }
+            int valueWidth = TextRenderer.MeasureText("100%", Fonts.Body).Width + Sc(6);
+            int sliderWidth = Math.Max(Sc(120), Math.Min(Sc(260), contentWidth - labelColumn - gap * 2 - valueWidth));
+            _opacitySlider.SetBounds(opacityLeft + scroll.X, y + scroll.Y + Sc(2), sliderWidth, Sc(28));
+            _opacityValueRect = new Rectangle(opacityLeft + sliderWidth + Sc(10), y + Sc(6),
+                valueWidth, Sc(22));
         }
 
         private const string HeadingText = "New connection";
@@ -575,6 +568,8 @@ namespace RdpTabs
 
             TextRenderer.DrawText(g, ThemeLabelText, Fonts.BodyBold, _themeLabelRect, Theme.Text, LeftFlags);
             TextRenderer.DrawText(g, OpacityLabelText, Fonts.BodyBold, _opacityLabelRect, Theme.Text, LeftFlags);
+            TextRenderer.DrawText(g, _opacitySlider.Value + "%", Fonts.Body, _opacityValueRect,
+                Theme.TextDim, LeftFlags);
         }
 
         private static TextFormatFlags LeftFlags

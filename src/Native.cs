@@ -61,32 +61,6 @@ namespace RdpTabs
             SendMessage(topLevel, WM_NCLBUTTONDOWN, (IntPtr)hitTest, lParam);
         }
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr FindWindow(string className, string windowName);
-
-        /// <summary>
-        /// Height of the Windows taskbar in physical pixels, or 0 if it cannot be read. The island lines itself
-        /// up with it: Windows 11 can put the taskbar along the top, and then the two read as one bar.
-        /// </summary>
-        public static int TaskbarHeight()
-        {
-            try
-            {
-                IntPtr tray = FindWindow("Shell_TrayWnd", null);
-                if (tray == IntPtr.Zero) return 0;
-                RECT r;
-                if (!GetWindowRect(tray, out r)) return 0;
-                return r.Bottom - r.Top;
-            }
-            catch (Exception)
-            {
-                return 0;
-            }
-        }
-
-        [DllImport("user32.dll")]
-        private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
-
         // ---- system metrics ----
         public const int SM_CYSIZEFRAME = 33;
         public const int SM_CXPADDEDBORDER = 92;

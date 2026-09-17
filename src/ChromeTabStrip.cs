@@ -73,7 +73,7 @@ namespace RdpTabs
         private Point _mouseDownPoint;
         private bool _dragging;
         private bool _islandDragging;
-        private int _islandGrabScreenX;
+        private int _islandGrabOffsetX;
         private bool _tooltipVisible;
 
         // Metrics in 96-DPI units, multiplied by the DPI ratio when used
@@ -82,7 +82,6 @@ namespace RdpTabs
         private int _slotMax, _slotMin, _iconSize, _closeSize, _paddingX, _newTabSize, _windowButtonWidth;
         private int _dragThreshold;
         private int _slant;
-        private int _dragGrip;
 
         public event EventHandler<TabIndexEventArgs> TabSelected;
         public event EventHandler<TabIndexEventArgs> TabCloseRequested;
@@ -248,7 +247,7 @@ namespace RdpTabs
             // remote screen area, so the air comes out of the tab rather than being added on top. The shoulder
             // is no longer an interlocking foot, just the gap left between neighbours.
             _topPad = Scale(4, s);
-            _tabHeight = Scale(32, s);
+            _tabHeight = Scale(36, s);
             _stripHeight = _topPad + _tabHeight;
             _tabBottomPad = Scale(4, s);
             _radius = Scale(6, s);
@@ -264,16 +263,6 @@ namespace RdpTabs
             // How far each side leans in towards the bottom, giving the island its inverted-trapezoid
             // silhouette. The tab area and the window buttons are inset by it so nothing gets clipped.
             _slant = Scale(10, s);
-            // Blank room to the left of the close button: somewhere to grab the island without risking the
-            // close button or a tab.
-            _dragGrip = Scale(26, s);
-
-            // Line the island up with the Windows taskbar. Windows 11 can dock the taskbar along the top, and
-            // then an island of the same height reads as part of it. Falls back to 48pt, the Win11 default.
-            int taskbar = Native.TaskbarHeight();
-            int wanted = taskbar >= Scale(24, s) && taskbar <= Scale(120, s) ? taskbar : Scale(48, s);
-            _stripHeight = wanted;
-            _tabHeight = _stripHeight - _topPad;
         }
 
         private static int Scale(int value, float factor)
@@ -301,7 +290,7 @@ namespace RdpTabs
 
         private int TabAreaRight
         {
-            get { return WindowButtonsLeft - _dragGrip - _newTabSize - Scale(10, _dpi / 96f); }
+            get { return WindowButtonsLeft - _newTabSize - Scale(10, _dpi / 96f); }
         }
 
         /// <summary>Slot width of one tab, including the shoulder on each side.</summary>
@@ -476,12 +465,11 @@ namespace RdpTabs
 
             if (_islandDragging)
             {
-                int screenX = PointToScreen(e.Location).X;
-                int delta = screenX - _islandGrabScreenX;
-                if (delta != 0 && IslandMoved != null)
+                if (IslandMoved != null && Parent != null)
                 {
-                    IslandMoved(this, new IslandMoveEventArgs(delta, false));
-                    _islandGrabScreenX = screenX;
+                    Point wanted = Parent.PointToClient(
+                        new Point(Cursor.Position.X - _islandGrabOffsetX, 0));
+                    IslandMoved(this, new IslandMoveEventArgs(wanted.X, false));
                 }
                 return;
             }
@@ -537,10 +525,19 @@ namespace RdpTabs
             if (e.Button == MouseButtons.Left && hit.Kind == TabHitKind.Tab)
             {
                 if (hit.Index != _selectedIndex) RaiseTabSelected(hit.Index);
-                _mouseDownOnTab = true;
-                _dragIndex = hit.Index;
-                _dragGrabOffset = e.X - TabRect(hit.Index).X;
-                _mouseDownPoint = e.Location;
+                if ((ModifierKeys & Keys.Control) != 0)
+                {
+                    _mouseDownOnTab = true;          // Ctrl+drag reorders the tabs
+                    _dragIndex = hit.Index;
+                    _dragGrabOffset = e.X - TabRect(hit.Index).X;
+                    _mouseDownPoint = e.Location;
+                }
+                else
+                {
+                    // There is no blank grip left on the island, so a tab is the handle: a plain drag slides
+                    // the whole island sideways. A click without movement still just selects the tab.
+                    BeginIslandDrag(e);
+                }
             }
             else if (e.Button == MouseButtons.Middle && hit.Kind == TabHitKind.Tab)
             {
@@ -555,7 +552,7 @@ namespace RdpTabs
             {
                 _islandDragging = false;
                 Capture = false;
-                if (IslandMoved != null) IslandMoved(this, new IslandMoveEventArgs(0, true));
+                if (IslandMoved != null) IslandMoved(this, new IslandMoveEventArgs(Left, true));
                 return;
             }
 
@@ -847,8 +844,7 @@ namespace RdpTabs
                 float s = _dpi / 96f;
                 int slot = _slotMax;
                 int tabs = _tabs.Count <= 1 ? slot : slot + (_tabs.Count - 1) * (slot - _shoulder);
-                return TabsLeft + tabs + Scale(10, s) + _newTabSize + _dragGrip +
-                       _windowButtonWidth + _slant;
+                return TabsLeft + tabs + Scale(10, s) + _newTabSize + _windowButtonWidth + _slant;
             }
         }
 
@@ -924,6 +920,22 @@ namespace RdpTabs
             get { return _dragging || _mouseDownOnTab; }
         }
 
+        private void BeginIslandDrag(MouseEventArgs e)
+        {
+            _islandDragging = true;
+            // Absolute anchoring: remember where inside the island the cursor grabbed it and afterwards drive
+            // the position straight from the cursor. Accumulating per-move deltas wobbles, because each move
+            // shifts the very coordinate system the next delta is measured in.
+            _islandGrabOffsetX = Cursor.Position.X - PointToScreen(Point.Empty).X;
+            Capture = true;
+        }
+
+        /// <summary>True while the island is being dragged, so the form leaves its position alone.</summary>
+        public bool IsDraggingIsland
+        {
+            get { return _islandDragging; }
+        }
+
         /// <summary>In overlay mode the blank strip area has to drag or resize the frame explicitly.</summary>
         private bool TryFrameGesture(TabHit hit, MouseEventArgs e)
         {
@@ -945,9 +957,7 @@ namespace RdpTabs
             // frameless window has left, so Shift still hands the drag to the frame itself.
             if (hit.Kind == TabHitKind.Empty && (ModifierKeys & Keys.Shift) == 0)
             {
-                _islandDragging = true;
-                _islandGrabScreenX = PointToScreen(e.Location).X;
-                Capture = true;
+                BeginIslandDrag(e);
                 return true;
             }
 
@@ -1006,15 +1016,18 @@ namespace RdpTabs
         }
     }
 
-    /// <summary>A sideways nudge of the floating island; Final marks the end of the gesture.</summary>
+    /// <summary>
+    /// Where the dragged island wants its left edge, in the parent's client coordinates. Absolute rather than a
+    /// delta: deltas accumulate rounding and fight the layout, which shows up as the island wobbling.
+    /// </summary>
     internal sealed class IslandMoveEventArgs : EventArgs
     {
-        public readonly int DeltaX;
+        public readonly int DesiredLeft;
         public readonly bool Final;
 
-        public IslandMoveEventArgs(int deltaX, bool final)
+        public IslandMoveEventArgs(int desiredLeft, bool final)
         {
-            DeltaX = deltaX;
+            DesiredLeft = desiredLeft;
             Final = final;
         }
     }

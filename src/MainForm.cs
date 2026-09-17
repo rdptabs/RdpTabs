@@ -111,9 +111,8 @@ namespace RdpTabs
             page.OpacityChangeRequested += delegate(object sender, OpacityEventArgs e)
             {
                 _store.IslandOpacityPercent = e.Percent;
-                _store.Save();
-                _strip.SetOpacityPercent(e.Percent);
-                page.SyncOpacityButtons();
+                _strip.SetOpacityPercent(e.Percent);       // live, so dragging previews the result
+                if (e.Committed) _store.Save();            // only write the file once the drag ends
             };
             page.ThemeChangeRequested += delegate(object sender, ThemeModeEventArgs e)
             {
@@ -506,26 +505,27 @@ namespace RdpTabs
         {
             int height = _strip.StripHeight;
             int width = Math.Min(ClientSize.Width, _strip.PreferredWidth);
-            int centre = (int)Math.Round(ClientSize.Width * (_store.IslandCenterPermille / 1000.0));
-            int left = Math.Max(0, Math.Min(centre - width / 2, ClientSize.Width - width));
+            // While the user is dragging, only the size may change: recomputing the position from the stored
+            // permille would snap the island back to that grid and fight the drag.
+            int left = _strip.IsDraggingIsland
+                ? Math.Max(0, Math.Min(_strip.Left, ClientSize.Width - width))
+                : Math.Max(0, Math.Min(
+                      (int)Math.Round(ClientSize.Width * (_store.IslandCenterPermille / 1000.0)) - width / 2,
+                      ClientSize.Width - width));
             _strip.SetBounds(left, 0, width, height);
         }
 
         private void OnIslandMoved(object sender, IslandMoveEventArgs e)
         {
-            if (e.Final)
-            {
-                _store.Save();
-                return;
-            }
             int width = _strip.Width;
-            int left = Math.Max(0, Math.Min(_strip.Left + e.DeltaX, ClientSize.Width - width));
-            _strip.Left = left;
+            int left = Math.Max(0, Math.Min(e.DesiredLeft, ClientSize.Width - width));
+            if (left != _strip.Left) _strip.Left = left;
             if (ClientSize.Width > 0)
             {
                 double centre = (left + width / 2.0) / ClientSize.Width;
                 _store.IslandCenterPermille = Math.Max(0, Math.Min(1000, (int)Math.Round(centre * 1000)));
             }
+            if (e.Final) _store.Save();
         }
 
         private void LayoutPages()

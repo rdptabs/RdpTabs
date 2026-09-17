@@ -236,6 +236,179 @@ namespace RdpTabs
     }
 
     /// <summary>Owner-drawn check box: the themed system glyph looks jarring on a dark background.</summary>
+    /// <summary>
+    /// A plain horizontal slider: track, filled portion, round thumb. Owner-drawn like the rest of the UI so it
+    /// follows the palette and the DPI scale instead of the system control's own look.
+    /// </summary>
+    internal sealed class SliderBar : Control
+    {
+        private int _minimum;
+        private int _maximum = 100;
+        private int _value;
+        private bool _dragging;
+        private bool _hover;
+
+        /// <summary>Fires continuously while dragging, so callers can preview the change.</summary>
+        public event EventHandler ValueChanged;
+
+        /// <summary>Fires once the user lets go, which is when a setting is worth saving.</summary>
+        public event EventHandler ValueCommitted;
+
+        public SliderBar()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+                     ControlStyles.Selectable, true);
+            Cursor = Cursors.Hand;
+            TabStop = true;
+            Height = Dpi.Scale(28);
+        }
+
+        public int Minimum
+        {
+            get { return _minimum; }
+            set { _minimum = value; Value = _value; }
+        }
+
+        public int Maximum
+        {
+            get { return _maximum; }
+            set { _maximum = value; Value = _value; }
+        }
+
+        public int Value
+        {
+            get { return _value; }
+            set
+            {
+                int clamped = Math.Max(_minimum, Math.Min(_maximum, value));
+                if (clamped == _value) return;
+                _value = clamped;
+                Invalidate();
+                if (ValueChanged != null) ValueChanged(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>Sets the value without raising ValueChanged, for loading a stored setting.</summary>
+        public void SetValueQuietly(int value)
+        {
+            _value = Math.Max(_minimum, Math.Min(_maximum, value));
+            Invalidate();
+        }
+
+        private int ThumbRadius
+        {
+            get { return Dpi.Scale(7); }
+        }
+
+        private Rectangle TrackRect
+        {
+            get
+            {
+                int h = Math.Max(Dpi.Scale(4), 2);
+                int r = ThumbRadius;
+                return new Rectangle(r, (Height - h) / 2, Math.Max(1, Width - r * 2), h);
+            }
+        }
+
+        private int ValueToX(int value)
+        {
+            Rectangle track = TrackRect;
+            int span = Math.Max(1, _maximum - _minimum);
+            return track.Left + (int)Math.Round((value - _minimum) / (double)span * track.Width);
+        }
+
+        private int XToValue(int x)
+        {
+            Rectangle track = TrackRect;
+            double t = (x - track.Left) / (double)Math.Max(1, track.Width);
+            return _minimum + (int)Math.Round(t * (_maximum - _minimum));
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button != MouseButtons.Left) return;
+            _dragging = true;
+            Capture = true;
+            Focus();
+            Value = XToValue(e.X);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (_dragging) Value = XToValue(e.X);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (!_dragging) return;
+            _dragging = false;
+            Capture = false;
+            if (ValueCommitted != null) ValueCommitted(this, EventArgs.Empty);
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            base.OnMouseEnter(e);
+            _hover = true;
+            Invalidate();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            _hover = false;
+            Invalidate();
+        }
+
+        protected override bool IsInputKey(Keys keyData)
+        {
+            if (keyData == Keys.Left || keyData == Keys.Right) return true;
+            return base.IsInputKey(keyData);
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            int step = (e.Modifiers & Keys.Control) != 0 ? 10 : 1;
+            if (e.KeyCode == Keys.Left) { Value = _value - step; e.Handled = true; }
+            else if (e.KeyCode == Keys.Right) { Value = _value + step; e.Handled = true; }
+            else return;
+            if (ValueCommitted != null) ValueCommitted(this, EventArgs.Empty);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.Clear(Parent != null ? Parent.BackColor : Theme.PageBackground);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Rectangle track = TrackRect;
+            int x = ValueToX(_value);
+            float radius = track.Height / 2f;
+
+            Draw.FillRounded(g, track, radius, Theme.InputBorder);
+            Rectangle filled = new Rectangle(track.Left, track.Top, Math.Max(0, x - track.Left), track.Height);
+            if (filled.Width > 0) Draw.FillRounded(g, filled, radius, Theme.Accent);
+
+            int r = ThumbRadius;
+            Rectangle thumb = new Rectangle(x - r, Height / 2 - r, r * 2, r * 2);
+            using (SolidBrush brush = new SolidBrush(_hover || _dragging ? Theme.AccentHover : Theme.Accent))
+                g.FillEllipse(brush, thumb);
+            using (Pen pen = new Pen(Theme.PageBackground, Math.Max(1f, Dpi.Scale(2))))
+                g.DrawEllipse(pen, thumb);
+
+            if (Focused)
+            {
+                using (Pen pen = new Pen(Theme.Text, 1f))
+                    g.DrawEllipse(pen, Rectangle.Inflate(thumb, 2, 2));
+            }
+        }
+    }
+
     internal sealed class ThemedCheckBox : CheckBox
     {
         private bool _hover;
