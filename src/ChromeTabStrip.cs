@@ -279,7 +279,7 @@ namespace RdpTabs
             _slant = Scale(18, s);
             // Blank room before the window buttons: a place to grab the island that is nowhere near the
             // close button.
-            _dragGrip = Scale(22, s);
+            _dragGrip = Scale(44, s);
         }
 
         private static int Scale(int value, float factor)
@@ -370,7 +370,9 @@ namespace RdpTabs
                 : TabRect(_tabs.Count - 1).Right - _shoulder + Scale(4, _dpi / 96f);
             x = Math.Min(x, TabAreaRight + Scale(2, _dpi / 96f));
             x = Math.Max(x, TabsLeft);
-            int y = _topPad + (_tabHeight - _newTabSize) / 2;
+            // Centred on the island, not on the tab row: the tab row is inset from the bottom, so using it
+            // left the + sitting low.
+            int y = (_stripHeight - _newTabSize) / 2;
             return new Rectangle(x, y, _newTabSize, _newTabSize);
         }
 
@@ -971,6 +973,14 @@ namespace RdpTabs
         {
             base.OnResize(e);
             Repaint();
+        }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            // A layered window shows nothing until a surface is pushed, and Repaint is gated on Visible -- so
+            // without this the island stayed blank after Show() until some unrelated event repainted it.
+            if (Visible) Repaint();
         }
 
 

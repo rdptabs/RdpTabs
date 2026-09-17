@@ -27,6 +27,7 @@ namespace RdpTabs
         private readonly System.Windows.Forms.Timer _autoHide = new System.Windows.Forms.Timer();
         private int _hideCountdown;
         private bool _stripMenuOpen;
+        private bool _islandReady;
         private readonly ChromeTabStrip _strip = new ChromeTabStrip();
         private readonly Panel _content = new Panel();
         private readonly List<SessionTab> _tabs = new List<SessionTab>();
@@ -351,6 +352,7 @@ namespace RdpTabs
         private void SyncAutoHide()
         {
             _hideCountdown = 0;
+            if (!_islandReady) return;      // nothing to show or hide until the island has been placed
             if (_store.AutoHideStrip)
             {
                 if (!_autoHide.Enabled) _autoHide.Start();
@@ -506,6 +508,7 @@ namespace RdpTabs
         private void LayoutIsland()
         {
             if (!IsHandleCreated || WindowState == FormWindowState.Minimized) return;
+            if (!_islandReady) return;
             int height = _strip.StripHeight;
             int width = Math.Min(ClientSize.Width, _strip.PreferredWidth);
             int left;
@@ -535,8 +538,12 @@ namespace RdpTabs
         /// </summary>
         private void ShowIsland()
         {
-            if (_strip.Owner == this) return;
+            if (_islandReady) return;
+            // Order matters. Setting Owner on an already-visible form makes WinForms recreate the handle, and a
+            // recreated layered window loses its surface -- which left the island blank until some unrelated
+            // event repainted it. So: own it and place it while still hidden, then show it.
             _strip.Owner = this;
+            _islandReady = true;
             LayoutIsland();
             _strip.Show();
             SyncAutoHide();
