@@ -33,6 +33,9 @@ namespace RdpTabs
         /// </summary>
         public int IslandCenterPermille = 500;
 
+        /// <summary>How opaque the floating island is, in percent. Clamped well above invisible.</summary>
+        public int IslandOpacityPercent = 92;
+
         /// <summary>Why loading failed (corrupt config etc). Surfaced by the UI; never blocks startup.</summary>
         public string LoadError { get; private set; }
 
@@ -71,6 +74,7 @@ namespace RdpTabs
 
                 store.AutoHideStrip = root["autoHideStrip"].AsBool(false);
                 store.IslandCenterPermille = Math.Max(0, Math.Min(1000, root["islandCenter"].AsInt(500)));
+                store.IslandOpacityPercent = Math.Max(30, Math.Min(100, root["islandOpacity"].AsInt(92)));
                 int themeValue = root["theme"].AsInt(0);
                 store.Theme = themeValue == 1 ? ThemeMode.Dark
                     : (themeValue == 2 ? ThemeMode.Light : ThemeMode.System);
@@ -111,6 +115,7 @@ namespace RdpTabs
             root.Set("theme", (int)Theme);
             root.Set("autoHideStrip", AutoHideStrip);
             root.Set("islandCenter", IslandCenterPermille);
+            root.Set("islandOpacity", IslandOpacityPercent);
 
             Json window = Json.NewObject();
             window.Set("x", WindowBounds.X);

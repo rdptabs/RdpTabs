@@ -50,6 +50,7 @@ namespace RdpTabs
             _content.BackColor = Theme.ActiveTab;
             Controls.Add(_content);
 
+            _strip.SetOpacityPercent(_store.IslandOpacityPercent);
             _autoHide.Interval = AutoHidePollMs;
             _autoHide.Tick += OnAutoHideTick;
 
@@ -106,6 +107,13 @@ namespace RdpTabs
             page.DeleteRequested += delegate(object sender, ProfileEventArgs e)
             {
                 DeleteProfile(e.Profile);
+            };
+            page.OpacityChangeRequested += delegate(object sender, OpacityEventArgs e)
+            {
+                _store.IslandOpacityPercent = e.Percent;
+                _store.Save();
+                _strip.SetOpacityPercent(e.Percent);
+                page.SyncOpacityButtons();
             };
             page.ThemeChangeRequested += delegate(object sender, ThemeModeEventArgs e)
             {

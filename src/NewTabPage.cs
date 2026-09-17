@@ -6,6 +6,17 @@ using System.Windows.Forms;
 
 namespace RdpTabs
 {
+    /// <summary>A new opacity for the floating tab island, in percent.</summary>
+    internal sealed class OpacityEventArgs : EventArgs
+    {
+        public readonly int Percent;
+
+        public OpacityEventArgs(int percent)
+        {
+            Percent = percent;
+        }
+    }
+
     internal sealed class ThemeModeEventArgs : EventArgs
     {
         public readonly ThemeMode Mode;
@@ -174,6 +185,9 @@ namespace RdpTabs
         private readonly FlatButton[] _themeButtons = new FlatButton[3];
 
         private Rectangle _themeLabelRect;
+        private Rectangle _opacityLabelRect;
+        private static readonly int[] OpacitySteps = { 100, 92, 84, 76 };
+        private readonly FlatButton[] _opacityButtons = new FlatButton[OpacitySteps.Length];
         private Rectangle _headingRect;
         private Rectangle _subtitleRect;
         private Rectangle _savedLabelRect;
@@ -185,6 +199,7 @@ namespace RdpTabs
         public event EventHandler<ProfileEventArgs> EditRequested;
         public event EventHandler<ProfileEventArgs> DeleteRequested;
         public event EventHandler<ThemeModeEventArgs> ThemeChangeRequested;
+        public event EventHandler<OpacityEventArgs> OpacityChangeRequested;
 
         public NewTabPage(ProfileStore store)
         {
@@ -231,6 +246,22 @@ namespace RdpTabs
             }
             SyncThemeButtons();
 
+            for (int i = 0; i < _opacityButtons.Length; i++)
+            {
+                int percent = OpacitySteps[i];
+                FlatButton button = new FlatButton();
+                button.Text = percent + "%";
+                button.Font = Fonts.Body;
+                button.Click += delegate
+                {
+                    EventHandler<OpacityEventArgs> handler = OpacityChangeRequested;
+                    if (handler != null) handler(this, new OpacityEventArgs(percent));
+                };
+                _opacityButtons[i] = button;
+                Controls.Add(button);
+            }
+            SyncOpacityButtons();
+
             BuildCards();
         }
 
@@ -243,6 +274,24 @@ namespace RdpTabs
         public void FocusInput()
         {
             if (_quickInput.CanFocus) _quickInput.Focus();
+        }
+
+        /// <summary>Marks whichever step is closest to the stored percentage.</summary>
+        public void SyncOpacityButtons()
+        {
+            int best = 0;
+            for (int i = 1; i < OpacitySteps.Length; i++)
+            {
+                if (Math.Abs(OpacitySteps[i] - _store.IslandOpacityPercent) <
+                    Math.Abs(OpacitySteps[best] - _store.IslandOpacityPercent))
+                    best = i;
+            }
+            for (int i = 0; i < _opacityButtons.Length; i++)
+            {
+                if (_opacityButtons[i] == null) continue;
+                _opacityButtons[i].Primary = i == best;
+                _opacityButtons[i].Invalidate();
+            }
         }
 
         private void SyncThemeButtons()
@@ -474,12 +523,24 @@ namespace RdpTabs
 
             y += Sc(20);
             _themeLabelRect = MeasureRow(left, y + Sc(6), contentWidth, ThemeLabelText, Fonts.BodyBold, false);
-            int themeLeft = left + TextRenderer.MeasureText(ThemeLabelText, Fonts.BodyBold).Width + gap * 2;
+            int labelColumn = Math.Max(TextRenderer.MeasureText(ThemeLabelText, Fonts.BodyBold).Width,
+                                       TextRenderer.MeasureText(OpacityLabelText, Fonts.BodyBold).Width);
+            int themeLeft = left + labelColumn + gap * 2;
             foreach (FlatButton button in _themeButtons)
             {
                 button.SizeToText(Sc(14));
                 button.SetBounds(themeLeft + scroll.X, y + scroll.Y, button.Width, Sc(30));
                 themeLeft += button.Width + Sc(6);
+            }
+
+            y += Sc(42);
+            _opacityLabelRect = MeasureRow(left, y + Sc(6), contentWidth, OpacityLabelText, Fonts.BodyBold, false);
+            int opacityLeft = left + labelColumn + gap * 2;
+            foreach (FlatButton button in _opacityButtons)
+            {
+                button.SizeToText(Sc(14));
+                button.SetBounds(opacityLeft + scroll.X, y + scroll.Y, button.Width, Sc(30));
+                opacityLeft += button.Width + Sc(6);
             }
         }
 
@@ -488,6 +549,7 @@ namespace RdpTabs
         private const string SavedLabelText = "Saved connections";
         private const string RecentLabelText = "Recent";
         private const string ThemeLabelText = "Theme";
+        private const string OpacityLabelText = "Tab bar opacity";
         private const string EmptyText =
             "No saved connections yet. Use \"Advanced...\" to create one with Save ticked, or right-click a tab and choose \"Save as connection\".";
 
@@ -512,6 +574,7 @@ namespace RdpTabs
                 TextRenderer.DrawText(g, RecentLabelText, Fonts.BodyBold, _recentLabelRect, Theme.Text, LeftFlags);
 
             TextRenderer.DrawText(g, ThemeLabelText, Fonts.BodyBold, _themeLabelRect, Theme.Text, LeftFlags);
+            TextRenderer.DrawText(g, OpacityLabelText, Fonts.BodyBold, _opacityLabelRect, Theme.Text, LeftFlags);
         }
 
         private static TextFormatFlags LeftFlags

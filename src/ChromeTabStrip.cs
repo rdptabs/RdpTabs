@@ -14,8 +14,6 @@ namespace RdpTabs
         Tab,
         TabClose,
         NewTab,
-        WindowMinimize,
-        WindowMaximize,
         WindowClose
     }
 
@@ -84,6 +82,7 @@ namespace RdpTabs
         private int _slotMax, _slotMin, _iconSize, _closeSize, _paddingX, _newTabSize, _windowButtonWidth;
         private int _dragThreshold;
         private int _slant;
+        private int _dragGrip;
 
         public event EventHandler<TabIndexEventArgs> TabSelected;
         public event EventHandler<TabIndexEventArgs> TabCloseRequested;
@@ -160,6 +159,7 @@ namespace RdpTabs
             _tabs.Insert(index, tab);
             if (_selectedIndex >= index) _selectedIndex++;
             SyncAnimation();
+            RequestParentLayout();
             Invalidate();
         }
 
@@ -171,7 +171,18 @@ namespace RdpTabs
             if (_selectedIndex >= _tabs.Count) _selectedIndex = _tabs.Count - 1;
             _hover = TabHit.None;
             SyncAnimation();
+            RequestParentLayout();
             Invalidate();
+        }
+
+        /// <summary>
+        /// PreferredWidth just changed, so ask the form to re-place the island. Without this the island keeps
+        /// its old width and divides it among the new tab count -- the tabs get narrower until something else
+        /// (a resize, a minimize) happens to trigger a layout.
+        /// </summary>
+        private void RequestParentLayout()
+        {
+            if (Parent != null) Parent.PerformLayout();
         }
 
         public void MoveTab(int from, int to)
@@ -253,6 +264,16 @@ namespace RdpTabs
             // How far each side leans in towards the bottom, giving the island its inverted-trapezoid
             // silhouette. The tab area and the window buttons are inset by it so nothing gets clipped.
             _slant = Scale(10, s);
+            // Blank room to the left of the close button: somewhere to grab the island without risking the
+            // close button or a tab.
+            _dragGrip = Scale(26, s);
+
+            // Line the island up with the Windows taskbar. Windows 11 can dock the taskbar along the top, and
+            // then an island of the same height reads as part of it. Falls back to 48pt, the Win11 default.
+            int taskbar = Native.TaskbarHeight();
+            int wanted = taskbar >= Scale(24, s) && taskbar <= Scale(120, s) ? taskbar : Scale(48, s);
+            _stripHeight = wanted;
+            _tabHeight = _stripHeight - _topPad;
         }
 
         private static int Scale(int value, float factor)
@@ -265,7 +286,7 @@ namespace RdpTabs
             get
             {
                 EnsureMetrics();
-                return Width - _slant - _windowButtonWidth * 3;
+                return Width - _slant - _windowButtonWidth;
             }
         }
 
@@ -280,7 +301,7 @@ namespace RdpTabs
 
         private int TabAreaRight
         {
-            get { return WindowButtonsLeft - _newTabSize - Scale(10, _dpi / 96f); }
+            get { return WindowButtonsLeft - _dragGrip - _newTabSize - Scale(10, _dpi / 96f); }
         }
 
         /// <summary>Slot width of one tab, including the shoulder on each side.</summary>
@@ -406,15 +427,7 @@ namespace RdpTabs
         {
             EnsureMetrics();
 
-            for (int slot = 0; slot < 3; slot++)
-            {
-                if (WindowButtonRect(slot).Contains(point))
-                {
-                    TabHitKind kind = slot == 0 ? TabHitKind.WindowMinimize
-                        : (slot == 1 ? TabHitKind.WindowMaximize : TabHitKind.WindowClose);
-                    return new TabHit(kind, -1);
-                }
-            }
+            if (WindowButtonRect(0).Contains(point)) return new TabHit(TabHitKind.WindowClose, -1);
 
             if (NewTabRect().Contains(point)) return new TabHit(TabHitKind.NewTab, -1);
 
@@ -561,12 +574,6 @@ namespace RdpTabs
                     break;
                 case TabHitKind.NewTab:
                     if (NewTabRequested != null) NewTabRequested(this, EventArgs.Empty);
-                    break;
-                case TabHitKind.WindowMinimize:
-                    RaiseWindowCommand(WindowCommand.Minimize);
-                    break;
-                case TabHitKind.WindowMaximize:
-                    RaiseWindowCommand(WindowCommand.MaximizeOrRestore);
                     break;
                 case TabHitKind.WindowClose:
                     RaiseWindowCommand(WindowCommand.Close);
@@ -784,57 +791,24 @@ namespace RdpTabs
                 hovered ? Theme.Text : Theme.TextDim, Math.Max(1.4f, box.Width / 16f));
         }
 
+        /// <summary>
+        /// Only a close button: minimize and maximize are gone. Double-clicking the island's blank area still
+        /// maximizes, and the taskbar handles minimizing.
+        /// </summary>
         private void DrawWindowButtons(Graphics g)
         {
-            for (int slot = 0; slot < 3; slot++)
+            Rectangle box = WindowButtonRect(0);
+            bool hovered = _hover.Kind == TabHitKind.WindowClose;
+            if (hovered)
             {
-                Rectangle box = WindowButtonRect(slot);
-                TabHitKind kind = slot == 0 ? TabHitKind.WindowMinimize
-                    : (slot == 1 ? TabHitKind.WindowMaximize : TabHitKind.WindowClose);
-                bool hovered = _hover.Kind == kind;
-
-                if (hovered)
-                {
-                    Color background = kind == TabHitKind.WindowClose
-                        ? Theme.WindowCloseHover : Theme.WindowButtonHover;
-                    using (SolidBrush brush = new SolidBrush(background))
-                        g.FillRectangle(brush, box);
-                }
-
-                Color foreground = hovered && kind == TabHitKind.WindowClose ? Color.White : Theme.TextDim;
-                float glyph = Math.Max(8f, _windowButtonWidth * 0.22f);
-                float cx = box.X + box.Width / 2f;
-                float cy = box.Y + box.Height / 2f;
-                float half = glyph / 2f;
-
-                using (Pen pen = new Pen(foreground, Math.Max(1f, _dpi / 96f)))
-                {
-                    switch (kind)
-                    {
-                        case TabHitKind.WindowMinimize:
-                            g.DrawLine(pen, cx - half, cy, cx + half, cy);
-                            break;
-                        case TabHitKind.WindowMaximize:
-                            Form form = FindForm();
-                            if (form != null && form.WindowState == FormWindowState.Maximized)
-                            {
-                                // restore: two offset rectangles
-                                g.DrawRectangle(pen, cx - half, cy - half + 2f, glyph - 2f, glyph - 2f);
-                                g.DrawLine(pen, cx - half + 2f, cy - half, cx + half, cy - half);
-                                g.DrawLine(pen, cx + half, cy - half, cx + half, cy + half - 2f);
-                            }
-                            else
-                            {
-                                g.DrawRectangle(pen, cx - half, cy - half, glyph, glyph);
-                            }
-                            break;
-                        case TabHitKind.WindowClose:
-                            Draw.DrawCross(g, new RectangleF(cx - half, cy - half, glyph, glyph),
-                                foreground, Math.Max(1f, _dpi / 96f));
-                            break;
-                    }
-                }
+                using (SolidBrush brush = new SolidBrush(Theme.WindowCloseHover))
+                    g.FillRectangle(brush, box);
             }
+
+            float glyph = Math.Max(8f, _windowButtonWidth * 0.22f);
+            Draw.DrawCross(g, new RectangleF(box.X + (box.Width - glyph) / 2f,
+                    box.Y + (box.Height - glyph) / 2f, glyph, glyph),
+                hovered ? Color.White : Theme.TextDim, Math.Max(1f, _dpi / 96f));
         }
 
         // ---------------- turn blank areas into window caption ----------------
@@ -873,7 +847,8 @@ namespace RdpTabs
                 float s = _dpi / 96f;
                 int slot = _slotMax;
                 int tabs = _tabs.Count <= 1 ? slot : slot + (_tabs.Count - 1) * (slot - _shoulder);
-                return TabsLeft + tabs + Scale(10, s) + _newTabSize + _windowButtonWidth * 3 + _slant;
+                return TabsLeft + tabs + Scale(10, s) + _newTabSize + _dragGrip +
+                       _windowButtonWidth + _slant;
             }
         }
 
@@ -882,7 +857,17 @@ namespace RdpTabs
         /// A uniform alpha is all a layered child window offers, which suits an island: everything it covers is
         /// its own content, so there are no chroma-keyed edges to fringe.
         /// </summary>
-        private const byte IslandAlpha = 224;
+        private const byte DefaultIslandAlpha = 235;   // 92%
+
+        private byte _islandAlpha = DefaultIslandAlpha;
+
+        /// <summary>0 would be invisible, so the settings page clamps well above that.</summary>
+        public void SetOpacityPercent(int percent)
+        {
+            percent = Math.Max(30, Math.Min(100, percent));
+            _islandAlpha = (byte)Math.Round(percent * 255 / 100.0);
+            if (IsHandleCreated) Native.SetWindowOpacity(Handle, _islandAlpha);
+        }
 
         protected override CreateParams CreateParams
         {
@@ -897,7 +882,7 @@ namespace RdpTabs
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            Native.SetWindowOpacity(Handle, IslandAlpha);
+            Native.SetWindowOpacity(Handle, _islandAlpha);
             UpdateIslandRegion();
         }
 
