@@ -27,6 +27,12 @@ namespace RdpTabs
         /// <summary>Hide the tab strip until the pointer reaches the top of the window.</summary>
         public bool AutoHideStrip;
 
+        /// <summary>
+        /// Where the floating tab island sits, as a permille of the window width (500 = centred). Stored
+        /// as a ratio rather than pixels so it survives a resize or a move to a monitor with another DPI.
+        /// </summary>
+        public int IslandCenterPermille = 500;
+
         /// <summary>Why loading failed (corrupt config etc). Surfaced by the UI; never blocks startup.</summary>
         public string LoadError { get; private set; }
 
@@ -64,6 +70,7 @@ namespace RdpTabs
                 }
 
                 store.AutoHideStrip = root["autoHideStrip"].AsBool(false);
+                store.IslandCenterPermille = Math.Max(0, Math.Min(1000, root["islandCenter"].AsInt(500)));
                 int themeValue = root["theme"].AsInt(0);
                 store.Theme = themeValue == 1 ? ThemeMode.Dark
                     : (themeValue == 2 ? ThemeMode.Light : ThemeMode.System);
@@ -103,6 +110,7 @@ namespace RdpTabs
 
             root.Set("theme", (int)Theme);
             root.Set("autoHideStrip", AutoHideStrip);
+            root.Set("islandCenter", IslandCenterPermille);
 
             Json window = Json.NewObject();
             window.Set("x", WindowBounds.X);

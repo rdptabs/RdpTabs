@@ -52,7 +52,6 @@ namespace RdpTabs
 
             _autoHide.Interval = AutoHidePollMs;
             _autoHide.Tick += OnAutoHideTick;
-            _strip.SetOverlay(_store.AutoHideStrip);
 
             _strip.TabSelected += OnTabSelected;
             _strip.TabCloseRequested += OnTabCloseRequested;
@@ -60,6 +59,7 @@ namespace RdpTabs
             _strip.TabsReordered += OnTabsReordered;
             _strip.TabContextMenuRequested += OnTabContextMenu;
             _strip.WindowCommandRequested += OnWindowCommand;
+            _strip.IslandMoved += OnIslandMoved;
             Controls.Add(_strip);
 
             RestoreWindowPlacement();
@@ -334,9 +334,6 @@ namespace RdpTabs
         {
             _store.AutoHideStrip = !_store.AutoHideStrip;
             _store.Save();
-            // Auto-hide needs the overlay layout: if the strip kept its own band, every reveal would resize
-            // the session and reset the remote resolution.
-            _strip.SetOverlay(_store.AutoHideStrip);
             SyncAutoHide();
             PerformLayout();
             _strip.Invalidate();
@@ -382,8 +379,8 @@ namespace RdpTabs
                 // A little above the client top as well, so the reveal band is reachable when not maximized
                 bool atTopEdge = insideX && cursor.Y >= client.Top - Sc(2) &&
                                  cursor.Y < client.Top + Sc(RevealBandPt);
-                bool overStrip = insideX && cursor.Y >= client.Top &&
-                                 cursor.Y < client.Top + _strip.StripHeight;
+                Rectangle island = RectangleToScreen(_strip.Bounds);
+                bool overStrip = island.Contains(cursor);
 
                 if (atTopEdge || (_strip.Visible && overStrip))
                 {
@@ -485,15 +482,42 @@ namespace RdpTabs
         protected override void OnLayout(LayoutEventArgs e)
         {
             base.OnLayout(e);
-            int stripHeight = _strip.StripHeight;
-            _strip.SetBounds(0, 0, ClientSize.Width, stripHeight);
-            // Immersive: the session takes the whole client area and the strip floats on top of it, so the
-            // remote desktop gets those pixels back and shows through the translucent strip.
-            int contentTop = _strip.Overlay ? 0 : stripHeight;
-            _content.SetBounds(0, contentTop, ClientSize.Width,
-                Math.Max(0, ClientSize.Height - contentTop));
-            if (_strip.Overlay && _strip.Visible) _strip.BringToFront();
+            LayoutIsland();
+            // The session takes the whole client area and the island floats on top of it, so the remote
+            // desktop keeps every pixel and shows through the translucent strip.
+            _content.SetBounds(0, 0, ClientSize.Width, ClientSize.Height);
+            if (_strip.Visible) _strip.BringToFront();
             LayoutPages();
+        }
+
+        /// <summary>
+        /// Sizes the island to its contents and places it along the top at the remembered ratio, clamped so it
+        /// always stays fully inside the window.
+        /// </summary>
+        private void LayoutIsland()
+        {
+            int height = _strip.StripHeight;
+            int width = Math.Min(ClientSize.Width, _strip.PreferredWidth);
+            int centre = (int)Math.Round(ClientSize.Width * (_store.IslandCenterPermille / 1000.0));
+            int left = Math.Max(0, Math.Min(centre - width / 2, ClientSize.Width - width));
+            _strip.SetBounds(left, 0, width, height);
+        }
+
+        private void OnIslandMoved(object sender, IslandMoveEventArgs e)
+        {
+            if (e.Final)
+            {
+                _store.Save();
+                return;
+            }
+            int width = _strip.Width;
+            int left = Math.Max(0, Math.Min(_strip.Left + e.DeltaX, ClientSize.Width - width));
+            _strip.Left = left;
+            if (ClientSize.Width > 0)
+            {
+                double centre = (left + width / 2.0) / ClientSize.Width;
+                _store.IslandCenterPermille = Math.Max(0, Math.Min(1000, (int)Math.Round(centre * 1000)));
+            }
         }
 
         private void LayoutPages()
@@ -502,7 +526,7 @@ namespace RdpTabs
             // In overlay mode only a session wants the strip on top of it. The new connection page has no
             // remote picture to reclaim and its heading would end up underneath the strip, so it keeps its
             // place below -- and resizing it costs nothing.
-            int inset = _strip.Overlay ? _strip.StripHeight : 0;
+            int inset = _strip.StripHeight;
             Rectangle belowStrip = new Rectangle(0, inset, area.Width, Math.Max(0, area.Height - inset));
             foreach (SessionTab tab in _tabs)
             {

@@ -52,10 +52,10 @@ namespace RdpTabs
     /// <summary>
     /// Browser-style tab strip: Firefox-shaped tabs, status dots, close buttons, the "+" button and
     /// the window buttons.
-    /// Blank areas return HTTRANSPARENT so hit-testing falls through to the parent window, which reuses the
-    /// native drag / snap / double-click-to-maximize / edge-resize behaviour (see MainForm's WM_NCHITTEST and
-    /// WM_NCCALCSIZE). In overlay mode that fallthrough would land on the session instead, so the strip keeps
-    /// the message and starts the frame gesture itself -- see TryFrameGesture.
+    /// It is a translucent island: only as wide as its contents, centred at the top, floating over the
+    /// session rather than taking a band of its own. Because the session lies directly beneath it, answering
+    /// HTTRANSPARENT for the blank bits would hand the click to the remote desktop instead of to the frame, so
+    /// the island keeps the message and starts the window drag itself -- see TryFrameGesture.
     /// </summary>
     internal sealed class ChromeTabStrip : Control
     {
@@ -74,6 +74,8 @@ namespace RdpTabs
         private int _dragGrabOffset;
         private Point _mouseDownPoint;
         private bool _dragging;
+        private bool _islandDragging;
+        private int _islandGrabScreenX;
         private bool _tooltipVisible;
 
         // Metrics in 96-DPI units, multiplied by the DPI ratio when used
@@ -81,6 +83,7 @@ namespace RdpTabs
         private int _stripHeight, _topPad, _tabHeight, _tabBottomPad, _radius, _shoulder;
         private int _slotMax, _slotMin, _iconSize, _closeSize, _paddingX, _newTabSize, _windowButtonWidth;
         private int _dragThreshold;
+        private int _slant;
 
         public event EventHandler<TabIndexEventArgs> TabSelected;
         public event EventHandler<TabIndexEventArgs> TabCloseRequested;
@@ -88,6 +91,9 @@ namespace RdpTabs
         public event EventHandler<TabReorderEventArgs> TabsReordered;
         public event EventHandler<TabContextMenuEventArgs> TabContextMenuRequested;
         public event EventHandler<WindowCommandEventArgs> WindowCommandRequested;
+
+        /// <summary>The user is sliding the island sideways; the form decides where it may land.</summary>
+        public event EventHandler<IslandMoveEventArgs> IslandMoved;
 
         public ChromeTabStrip()
         {
@@ -244,6 +250,9 @@ namespace RdpTabs
             _newTabSize = Scale(28, s);
             _windowButtonWidth = Scale(46, s);
             _dragThreshold = Scale(5, s);
+            // How far each side leans in towards the bottom, giving the island its inverted-trapezoid
+            // silhouette. The tab area and the window buttons are inset by it so nothing gets clipped.
+            _slant = Scale(10, s);
         }
 
         private static int Scale(int value, float factor)
@@ -256,7 +265,7 @@ namespace RdpTabs
             get
             {
                 EnsureMetrics();
-                return Width - _windowButtonWidth * 3;
+                return Width - _slant - _windowButtonWidth * 3;
             }
         }
 
@@ -265,7 +274,7 @@ namespace RdpTabs
             get
             {
                 EnsureMetrics();
-                return Scale(2, _dpi / 96f);
+                return _slant + Scale(2, _dpi / 96f);
             }
         }
 
@@ -452,6 +461,18 @@ namespace RdpTabs
         {
             base.OnMouseMove(e);
 
+            if (_islandDragging)
+            {
+                int screenX = PointToScreen(e.Location).X;
+                int delta = screenX - _islandGrabScreenX;
+                if (delta != 0 && IslandMoved != null)
+                {
+                    IslandMoved(this, new IslandMoveEventArgs(delta, false));
+                    _islandGrabScreenX = screenX;
+                }
+                return;
+            }
+
             if (_mouseDownOnTab && !_dragging &&
                 Math.Abs(e.X - _mouseDownPoint.X) > _dragThreshold)
             {
@@ -517,6 +538,14 @@ namespace RdpTabs
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+            if (_islandDragging)
+            {
+                _islandDragging = false;
+                Capture = false;
+                if (IslandMoved != null) IslandMoved(this, new IslandMoveEventArgs(0, true));
+                return;
+            }
+
             bool wasDragging = _dragging;
             _mouseDownOnTab = false;
             _dragging = false;
@@ -822,9 +851,7 @@ namespace RdpTabs
                 // beneath the strip, so falling through would reach the session instead of the frame -- the
                 // window would stop being draggable and the click would leak into the remote desktop. There we
                 // keep the message and start the drag ourselves in OnMouseDown.
-                m.Result = blank && !Overlay
-                    ? (IntPtr)Native.HTTRANSPARENT
-                    : (IntPtr)Native.HTCLIENT;
+                m.Result = (IntPtr)Native.HTCLIENT;
                 return;
             }
             base.WndProc(ref m);
@@ -834,17 +861,76 @@ namespace RdpTabs
         /// Overlay mode: the strip floats over the session, translucent, instead of taking a band of its own.
         /// </summary>
         /// <summary>
-        /// Overlay mode: the session fills the client area and the strip sits on top of it instead of taking a
-        /// band of its own. Auto-hide needs this too -- otherwise showing and hiding the strip would resize the
-        /// session every time, and the remote resolution would be reset on every mouse move to the top.
+        /// Width the floating island asks for: a comfortable slot per tab, plus the "+" button and the window
+        /// buttons. MainForm centres the strip at this width, clamped to the window; once clamped, SlotWidth
+        /// squeezes the tabs, so the island grows with the tab count and then stops at the window edge.
         /// </summary>
-        public bool Overlay { get; private set; }
-
-        public void SetOverlay(bool value)
+        public int PreferredWidth
         {
-            if (Overlay == value) return;
-            Overlay = value;
-            Invalidate();
+            get
+            {
+                EnsureMetrics();
+                float s = _dpi / 96f;
+                int slot = _slotMax;
+                int tabs = _tabs.Count <= 1 ? slot : slot + (_tabs.Count - 1) * (slot - _shoulder);
+                return TabsLeft + tabs + Scale(10, s) + _newTabSize + _windowButtonWidth * 3 + _slant;
+            }
+        }
+
+        /// <summary>
+        /// The island floats over the session, so it is translucent and the remote picture shows through it.
+        /// A uniform alpha is all a layered child window offers, which suits an island: everything it covers is
+        /// its own content, so there are no chroma-keyed edges to fringe.
+        /// </summary>
+        private const byte IslandAlpha = 224;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= Native.WS_EX_LAYERED;
+                return cp;
+            }
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            Native.SetWindowOpacity(Handle, IslandAlpha);
+            UpdateIslandRegion();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            UpdateIslandRegion();
+        }
+
+        /// <summary>
+        /// Clips the island to an inverted trapezoid: wide along the top edge of the window, leaning in towards
+        /// the bottom. A layered child window only offers one alpha for the whole surface, so the silhouette has
+        /// to come from a region rather than from per-pixel transparency -- which is also why the slanted sides
+        /// are hard-edged instead of anti-aliased.
+        /// </summary>
+        private void UpdateIslandRegion()
+        {
+            if (!IsHandleCreated || Width <= 0 || Height <= 0) return;
+            EnsureMetrics();
+            int slant = Math.Min(_slant, Width / 4);
+            Region previous = Region;
+            using (GraphicsPath path = new GraphicsPath())
+            {
+                path.AddPolygon(new Point[]
+                {
+                    new Point(0, 0),
+                    new Point(Width, 0),
+                    new Point(Width - slant, Height),
+                    new Point(slant, Height)
+                });
+                Region = new Region(path);
+            }
+            if (previous != null) previous.Dispose();
         }
 
         /// <summary>True while the user is mid-gesture, so auto-hide knows to stay put.</summary>
@@ -856,7 +942,7 @@ namespace RdpTabs
         /// <summary>In overlay mode the blank strip area has to drag or resize the frame explicitly.</summary>
         private bool TryFrameGesture(TabHit hit, MouseEventArgs e)
         {
-            if (!Overlay || e.Button != MouseButtons.Left) return false;
+            if (e.Button != MouseButtons.Left) return false;
             if (hit.Kind != TabHitKind.Empty && hit.Kind != TabHitKind.TopEdge) return false;
 
             Form form = FindForm();
@@ -867,6 +953,16 @@ namespace RdpTabs
             if (e.Clicks >= 2 && hit.Kind == TabHitKind.Empty)
             {
                 RaiseWindowCommand(WindowCommand.MaximizeOrRestore);
+                return true;
+            }
+
+            // Plain drag slides the island along the top; the island's blank area is the only grip the
+            // frameless window has left, so Shift still hands the drag to the frame itself.
+            if (hit.Kind == TabHitKind.Empty && (ModifierKeys & Keys.Shift) == 0)
+            {
+                _islandDragging = true;
+                _islandGrabScreenX = PointToScreen(e.Location).X;
+                Capture = true;
                 return true;
             }
 
@@ -922,6 +1018,19 @@ namespace RdpTabs
         {
             Index = index;
             ScreenLocation = screenLocation;
+        }
+    }
+
+    /// <summary>A sideways nudge of the floating island; Final marks the end of the gesture.</summary>
+    internal sealed class IslandMoveEventArgs : EventArgs
+    {
+        public readonly int DeltaX;
+        public readonly bool Final;
+
+        public IslandMoveEventArgs(int deltaX, bool final)
+        {
+            DeltaX = deltaX;
+            Final = final;
         }
     }
 
