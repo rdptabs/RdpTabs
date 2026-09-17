@@ -353,7 +353,7 @@ namespace RdpTabs
         {
             _hideCountdown = 0;
             if (!_islandReady) return;      // nothing to show or hide until the island has been placed
-            if (_store.AutoHideStrip)
+            if (_store.AutoHideStrip && _strip.IslandMode)
             {
                 if (!_autoHide.Enabled) _autoHide.Start();
                 return;
@@ -376,7 +376,7 @@ namespace RdpTabs
             }
 
             bool visible;
-            if (_stripMenuOpen || _strip.IsBusy || !ActiveTabIsSession())
+            if (_stripMenuOpen || _strip.IsBusy || !ActiveTabIsSession() || !_strip.IslandMode)
             {
                 visible = true;            // pinned: no remote picture to get out of the way of, or mid-gesture
                 _hideCountdown = 0;
@@ -493,9 +493,11 @@ namespace RdpTabs
         {
             base.OnLayout(e);
             LayoutIsland();
-            // The session takes the whole client area and the island floats on top of it, so the remote
-            // desktop keeps every pixel and shows through the translucent strip.
-            _content.SetBounds(0, 0, ClientSize.Width, ClientSize.Height);
+            // Island mode: the session takes the whole client area and the island floats on top of it, so the
+            // remote desktop keeps every pixel. Band mode: the strip owns its own row, as a title bar would.
+            int contentTop = _strip.IslandMode ? 0 : _strip.StripHeight;
+            _content.SetBounds(0, contentTop, ClientSize.Width,
+                Math.Max(0, ClientSize.Height - contentTop));
             if (_strip.Visible) _strip.BringToFront();
             LayoutPages();
         }
@@ -509,7 +511,15 @@ namespace RdpTabs
         {
             if (!IsHandleCreated || WindowState == FormWindowState.Minimized) return;
             if (!_islandReady) return;
+
+            // Maximized: a floating island over the session. Windowed: an ordinary band across the top.
+            _strip.IslandMode = WindowState == FormWindowState.Maximized;
             int height = _strip.StripHeight;
+            if (!_strip.IslandMode)
+            {
+                _strip.Bounds = RectangleToScreen(new Rectangle(0, 0, ClientSize.Width, height));
+                return;
+            }
             int width = Math.Min(ClientSize.Width, _strip.PreferredWidth);
             int left;
             if (_strip.IsDraggingIsland)
@@ -577,13 +587,13 @@ namespace RdpTabs
             // and only reordered by z, so a page that stopped below the island would let the session behind it
             // show through up there. The Home page keeps its content clear of the island with a top inset
             // instead, which still paints its own background across that band.
-            int inset = _strip.StripHeight;
+            int inset = _strip.IslandMode ? _strip.StripHeight : 0;
             foreach (SessionTab tab in _tabs)
             {
                 if (tab.Page == null) continue;
                 tab.Page.Bounds = area;
-                NewTabPage home = tab.Page as NewTabPage;
-                if (home != null) home.TopInset = inset;
+                NewTabPage newTab = tab.Page as NewTabPage;
+                if (newTab != null) newTab.TopInset = inset;
             }
         }
 

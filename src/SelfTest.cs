@@ -436,6 +436,21 @@ namespace RdpTabs
                 problems += ExpectHit(strip, new Point(emptyX, 1),
                     TabHitKind.TopEdge, -1, "gap above blank area (resize)");
 
+                // Band mode (the windowed look) must be a plain opaque rectangle: no slant, no transparency.
+                strip.IslandMode = false;
+                using (Bitmap band = strip.RenderToBitmap())
+                {
+                    Color corner = band.GetPixel(1, band.Height - 2);
+                    Color middle = band.GetPixel(band.Width / 2, 2);
+                    if (corner.A != 255 || middle.A != 255)
+                    {
+                        problems++;
+                        Line("  ! band mode is not opaque: corner alpha " + corner.A +
+                             ", background alpha " + middle.A);
+                    }
+                }
+                strip.IslandMode = true;
+
                 // Render through the real code path the compositor uses, so the preview is exactly what the
                 // island shows -- including the per-pixel alpha of the translucent background.
                 string png = Path.Combine(Path.GetTempPath(), "RdpTabs-tabstrip.png");

@@ -87,6 +87,7 @@ namespace RdpTabs
         private int _dragThreshold;
         private int _slant;
         private int _dragGrip;
+        private bool _islandMode = true;
 
         public event EventHandler<TabIndexEventArgs> TabSelected;
         public event EventHandler<TabIndexEventArgs> TabCloseRequested;
@@ -276,7 +277,7 @@ namespace RdpTabs
             _dragThreshold = Scale(5, s);
             // How far each side leans in towards the bottom, giving the island its inverted-trapezoid
             // silhouette. The tab area and the window buttons are inset by it so nothing gets clipped.
-            _slant = Scale(18, s);
+            _slant = _islandMode ? Scale(18, s) : 0;
             // Blank room before the window buttons: a place to grab the island that is nowhere near the
             // close button.
             _dragGrip = Scale(44, s);
@@ -547,17 +548,17 @@ namespace RdpTabs
             if (e.Button == MouseButtons.Left && hit.Kind == TabHitKind.Tab)
             {
                 if (hit.Index != _selectedIndex) RaiseTabSelected(hit.Index);
-                if ((ModifierKeys & Keys.Control) != 0)
+                // On the island a tab doubles as its drag handle, since there is little blank room left;
+                // reordering then needs Ctrl. In band mode dragging a tab reorders it, as usual.
+                if (!_islandMode || (ModifierKeys & Keys.Control) != 0)
                 {
-                    _mouseDownOnTab = true;          // Ctrl+drag reorders the tabs
+                    _mouseDownOnTab = true;
                     _dragIndex = hit.Index;
                     _dragGrabOffset = e.X - TabRect(hit.Index).X;
                     _mouseDownPoint = e.Location;
                 }
                 else
                 {
-                    // There is no blank grip left on the island, so a tab is the handle: a plain drag slides
-                    // the whole island sideways. A click without movement still just selects the tab.
                     BeginIslandDrag(e);
                 }
             }
@@ -711,8 +712,9 @@ namespace RdpTabs
 
         private void PaintIsland(Graphics g)
         {
+            byte alpha = _islandMode ? _islandAlpha : (byte)255;
             using (GraphicsPath island = IslandPath())
-            using (SolidBrush brush = new SolidBrush(Color.FromArgb(_islandAlpha, Theme.Frame)))
+            using (SolidBrush brush = new SolidBrush(Color.FromArgb(alpha, Theme.Frame)))
                 g.FillPath(brush, island);
 
             GraphicsState state = g.Save();
@@ -738,8 +740,13 @@ namespace RdpTabs
         /// </summary>
         private GraphicsPath IslandPath()
         {
-            int slant = Math.Min(_slant, Width / 4);
             GraphicsPath path = new GraphicsPath();
+            if (!_islandMode)
+            {
+                path.AddRectangle(new Rectangle(0, 0, Width, Height));
+                return path;
+            }
+            int slant = Math.Min(_slant, Width / 4);
             path.AddPolygon(new Point[]
             {
                 new Point(0, 0),
@@ -1001,6 +1008,24 @@ namespace RdpTabs
         }
 
         /// <summary>True while the island is being dragged, so the form leaves its position alone.</summary>
+        /// <summary>
+        /// Island mode floats a translucent, content-width, slanted strip over a maximized session. Off, the
+        /// strip is an ordinary full-width band with a square edge and no transparency, which is what suits a
+        /// windowed app -- tabs on the left, window buttons on the right.
+        /// </summary>
+        public bool IslandMode
+        {
+            get { return _islandMode; }
+            set
+            {
+                if (_islandMode == value) return;
+                _islandMode = value;
+                _dpi = 0;                 // force the metrics to be recomputed: the slant depends on the mode
+                EnsureMetrics();
+                Repaint();
+            }
+        }
+
         public bool IsDraggingIsland
         {
             get { return _islandDragging; }
@@ -1023,9 +1048,9 @@ namespace RdpTabs
                 return true;
             }
 
-            // Plain drag slides the island along the top; the island's blank area is the only grip the
-            // frameless window has left, so Shift still hands the drag to the frame itself.
-            if (hit.Kind == TabHitKind.Empty && (ModifierKeys & Keys.Shift) == 0)
+            // An island slides itself when dragged by its blank area (Shift still moves the window). A
+            // full-width band behaves like a title bar: dragging it moves the window.
+            if (_islandMode && hit.Kind == TabHitKind.Empty && (ModifierKeys & Keys.Shift) == 0)
             {
                 BeginIslandDrag(e);
                 return true;
