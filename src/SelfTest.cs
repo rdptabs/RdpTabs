@@ -385,11 +385,12 @@ namespace RdpTabs
                 strip.Location = new Point(-4000, -4000);
                 strip.Size = new Size(Dpi.Scale(1100), strip.StripHeight);
 
-                string[] titles = { "10.0.0.5", "srv-db-prod-01.corp.example.com", "jump-host", "New connection", "192.168.1.7" };
+                // The last one is Home: permanent, unclosable, always at the right-hand end.
+                string[] titles = { "10.0.0.5", "srv-db-prod-01.corp.example.com", "jump-host", "192.168.1.7", "Home" };
                 SessionState[] states =
                 {
                     SessionState.Connected, SessionState.Connecting, SessionState.Failed,
-                    SessionState.Idle, SessionState.Disconnected
+                    SessionState.Disconnected, SessionState.Idle
                 };
                 for (int i = 0; i < titles.Length; i++)
                 {
@@ -397,6 +398,7 @@ namespace RdpTabs
                     tab.Title = titles[i];
                     tab.Tooltip = titles[i];
                     tab.Status = states[i];
+                    tab.IsHome = i == titles.Length - 1;
                     strip.Add(tab);
                 }
                 strip.SelectedIndex = 1;
@@ -412,18 +414,21 @@ namespace RdpTabs
                 {
                     Rectangle bounds = strip.TabBounds(i);
                     problems += ExpectHit(strip, Center(bounds), TabHitKind.Tab, i, "tab " + i + " centre");
+                    // Home has no close button, so that spot must fall through to the tab itself
+                    bool home = strip[i].IsHome;
                     problems += ExpectHit(strip, Center(strip.CloseButtonBounds(i)),
-                        TabHitKind.TabClose, i, "tab " + i + " close button");
+                        home ? TabHitKind.Tab : TabHitKind.TabClose, i,
+                        home ? "Home has no close button" : "tab " + i + " close button");
                     // The gap directly above a tab must hit that tab (otherwise clicks there do nothing)
                     problems += ExpectHit(strip, new Point(bounds.X + bounds.Width / 2, 1),
                         TabHitKind.Tab, i, "gap above tab " + i + "");
                 }
-                problems += ExpectHit(strip, Center(strip.NewTabButtonBounds()), TabHitKind.NewTab, -1, "new tab button");
                 problems += ExpectHit(strip, Center(strip.WindowButtonBounds(0)),
                     TabHitKind.WindowClose, -1, "window close button");
 
-                Rectangle newTab = strip.NewTabButtonBounds();
-                int emptyX = (newTab.Right + strip.WindowButtonBounds(0).Left) / 2;
+                // Between the last tab and the close button: the island's own grab area
+                Rectangle lastTab = strip.TabBounds(strip.Count - 1);
+                int emptyX = (lastTab.Right + strip.WindowButtonBounds(0).Left) / 2;
                 problems += ExpectHit(strip, new Point(emptyX, strip.StripHeight / 2),
                     TabHitKind.Empty, -1, "blank area (window drag)");
                 // The gap above blank areas still belongs to the window's top edge (vertical resize)

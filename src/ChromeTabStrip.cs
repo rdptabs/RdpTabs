@@ -15,7 +15,6 @@ namespace RdpTabs
         TopEdge,     // the thin gap on top: handed to the window for vertical resizing
         Tab,
         TabClose,
-        NewTab,
         WindowClose
     }
 
@@ -43,6 +42,9 @@ namespace RdpTabs
     /// <summary>Everything the strip needs to draw one tab.</summary>
     internal sealed class TabModel
     {
+        /// <summary>The permanent Home tab: it cannot be closed and always sits at the right-hand end.</summary>
+        public bool IsHome;
+
         public string Title = string.Empty;
         public string Tooltip = string.Empty;
         public SessionState Status = SessionState.Idle;
@@ -87,7 +89,6 @@ namespace RdpTabs
 
         public event EventHandler<TabIndexEventArgs> TabSelected;
         public event EventHandler<TabIndexEventArgs> TabCloseRequested;
-        public event EventHandler NewTabRequested;
         public event EventHandler<TabReorderEventArgs> TabsReordered;
         public event EventHandler<TabContextMenuEventArgs> TabContextMenuRequested;
         public event EventHandler<WindowCommandEventArgs> WindowCommandRequested;
@@ -198,7 +199,8 @@ namespace RdpTabs
         public void MoveTab(int from, int to)
         {
             if (from < 0 || from >= _tabs.Count) return;
-            to = Math.Max(0, Math.Min(to, _tabs.Count - 1));
+            if (_tabs[from].IsHome) return;                      // Home is pinned to the right-hand end
+            to = Math.Max(0, Math.Min(to, LastMovableIndex));
             if (from == to) return;
             TabModel tab = _tabs[from];
             _tabs.RemoveAt(from);
@@ -207,6 +209,16 @@ namespace RdpTabs
             else if (from < _selectedIndex && to >= _selectedIndex) _selectedIndex--;
             else if (from > _selectedIndex && to <= _selectedIndex) _selectedIndex++;
             Repaint();
+        }
+
+        /// <summary>Highest index an ordinary tab may occupy: one short of Home, when Home exists.</summary>
+        private int LastMovableIndex
+        {
+            get
+            {
+                int last = _tabs.Count - 1;
+                return last >= 0 && _tabs[last].IsHome ? last - 1 : last;
+            }
         }
 
         /// <summary>A tab's title or status changed: repaint (and start/stop the "connecting" animation).</summary>
@@ -301,7 +313,7 @@ namespace RdpTabs
 
         private int TabAreaRight
         {
-            get { return WindowButtonsLeft - _newTabSize - Scale(10, _dpi / 96f); }
+            get { return WindowButtonsLeft - Scale(6, _dpi / 96f); }
         }
 
         /// <summary>Slot width of one tab, including the shoulder on each side.</summary>
@@ -356,18 +368,6 @@ namespace RdpTabs
             return new Rectangle(left, tab.Y + (tab.Height - _iconSize) / 2, _iconSize, _iconSize);
         }
 
-        private Rectangle NewTabRect()
-        {
-            EnsureMetrics();
-            int x = _tabs.Count == 0
-                ? TabsLeft + _shoulder
-                : TabRect(_tabs.Count - 1).Right - _shoulder + Scale(4, _dpi / 96f);
-            x = Math.Min(x, TabAreaRight + Scale(2, _dpi / 96f));
-            x = Math.Max(x, TabsLeft);
-            int y = _topPad + (_tabHeight - _newTabSize) / 2;
-            return new Rectangle(x, y, _newTabSize, _newTabSize);
-        }
-
         private Rectangle WindowButtonRect(int slot)
         {
             EnsureMetrics();
@@ -386,11 +386,6 @@ namespace RdpTabs
             return CloseRect(index);
         }
 
-        public Rectangle NewTabButtonBounds()
-        {
-            return NewTabRect();
-        }
-
         public Rectangle WindowButtonBounds(int slot)
         {
             return WindowButtonRect(slot);
@@ -398,6 +393,7 @@ namespace RdpTabs
 
         private bool ShowCloseButton(int index)
         {
+            if (_tabs[index].IsHome) return false;   // Home cannot be closed
             Rectangle tab = TabRect(index);
             int inner = tab.Width - _shoulder * 2 - _paddingX * 2;
             if (inner >= _iconSize + _closeSize + Scale(24, _dpi / 96f)) return true;
@@ -428,8 +424,6 @@ namespace RdpTabs
             EnsureMetrics();
 
             if (WindowButtonRect(0).Contains(point)) return new TabHit(TabHitKind.WindowClose, -1);
-
-            if (NewTabRect().Contains(point)) return new TabHit(TabHitKind.NewTab, -1);
 
             // The active tab is on top, so test it first
             if (_selectedIndex >= 0)
@@ -495,7 +489,7 @@ namespace RdpTabs
             {
                 int wouldBeLeft = e.X - _dragGrabOffset - TabsLeft + _scrollOffset;
                 int target = (int)Math.Round(wouldBeLeft / (double)Stride);
-                target = Math.Max(0, Math.Min(target, _tabs.Count - 1));
+                target = Math.Max(0, Math.Min(target, LastMovableIndex));
                 if (target != _dragIndex)
                 {
                     int from = _dragIndex;
@@ -580,9 +574,6 @@ namespace RdpTabs
             {
                 case TabHitKind.TabClose:
                     RaiseCloseRequested(hit.Index);
-                    break;
-                case TabHitKind.NewTab:
-                    if (NewTabRequested != null) NewTabRequested(this, EventArgs.Empty);
                     break;
                 case TabHitKind.WindowClose:
                     RaiseWindowCommand(WindowCommand.Close);
@@ -711,7 +702,6 @@ namespace RdpTabs
 
             g.Restore(state);
 
-            DrawNewTabButton(g);
             DrawWindowButtons(g);
         }
 
@@ -831,18 +821,6 @@ namespace RdpTabs
             return path;
         }
 
-        private void DrawNewTabButton(Graphics g)
-        {
-            Rectangle box = NewTabRect();
-            bool hovered = _hover.Kind == TabHitKind.NewTab;
-            if (hovered)
-                Draw.FillRounded(g, box, Math.Max(4, box.Width / 4f), Theme.TabHover);
-            float inset = box.Width * 0.3f;
-            Draw.DrawPlus(g, new RectangleF(box.X + inset, box.Y + inset,
-                    box.Width - inset * 2, box.Height - inset * 2),
-                hovered ? Theme.Text : Theme.TextDim, Math.Max(1.4f, box.Width / 16f));
-        }
-
         /// <summary>
         /// Only a close button: minimize and maximize are gone. Double-clicking the island's blank area still
         /// maximizes, and the taskbar handles minimizing.
@@ -899,7 +877,7 @@ namespace RdpTabs
                 float s = _dpi / 96f;
                 int slot = _slotMax;
                 int tabs = _tabs.Count <= 1 ? slot : slot + (_tabs.Count - 1) * (slot - _shoulder);
-                return TabsLeft + tabs + Scale(10, s) + _newTabSize + _windowButtonWidth + _slant;
+                return TabsLeft + tabs + Scale(6, s) + _windowButtonWidth + _slant;
             }
         }
 

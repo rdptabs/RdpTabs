@@ -56,7 +56,6 @@ namespace RdpTabs
 
             _strip.TabSelected += OnTabSelected;
             _strip.TabCloseRequested += OnTabCloseRequested;
-            _strip.NewTabRequested += delegate { AddNewTabPage(true); };
             _strip.TabsReordered += OnTabsReordered;
             _strip.TabContextMenuRequested += OnTabContextMenu;
             _strip.WindowCommandRequested += OnWindowCommand;
@@ -65,7 +64,7 @@ namespace RdpTabs
 
 
             RestoreWindowPlacement();
-            AddNewTabPage(true);
+            AddHomeTab();
             SyncAutoHide();
         }
 
@@ -85,20 +84,25 @@ namespace RdpTabs
 
         // ---------------- tab orchestration ----------------
 
-        private SessionTab AddNewTabPage(bool activate)
+        /// <summary>
+        /// The one permanent Home tab: it holds the new-connection page, cannot be closed, and the strip keeps
+        /// it at the right-hand end. Connecting from it opens a fresh tab rather than consuming Home.
+        /// </summary>
+        private SessionTab AddHomeTab()
         {
             NewTabPage page = new NewTabPage(_store);
             SessionTab tab = new SessionTab();
             tab.Page = page;
             tab.Model = new TabModel();
-            tab.Model.Title = "New connection";
+            tab.Model.IsHome = true;
+            tab.Model.Title = "Home";
             tab.Model.Tooltip = "New connection";
             tab.Model.Status = SessionState.Idle;
             tab.Model.Tag = tab;
 
             page.ConnectRequested += delegate(object sender, ProfileEventArgs e)
             {
-                ConnectInTab(tab, e.Profile);
+                ConnectInTab(AddSessionSlot(true), e.Profile);
             };
             page.EditRequested += delegate(object sender, ProfileEventArgs e)
             {
@@ -124,9 +128,48 @@ namespace RdpTabs
             _content.Controls.Add(page);
             _strip.Add(tab.Model);
             LayoutPages();
+            ActivateTab(tab);
+            return tab;
+        }
+
+        /// <summary>
+        /// An empty tab for a session that is about to start, inserted just before Home so Home stays last.
+        /// The placeholder page exists only until ConnectInTab swaps the real session control in.
+        /// </summary>
+        private SessionTab AddSessionSlot(bool activate)
+        {
+            SessionTab tab = new SessionTab();
+            tab.Page = new Panel();
+            tab.Page.BackColor = Theme.Overlay;
+            tab.Model = new TabModel();
+            tab.Model.Title = "Connecting...";
+            tab.Model.Status = SessionState.Idle;
+            tab.Model.Tag = tab;
+
+            int index = HomeIndex >= 0 ? HomeIndex : _tabs.Count;
+            _tabs.Insert(index, tab);
+            _content.Controls.Add(tab.Page);
+            _strip.Insert(index, tab.Model);
+            LayoutPages();
 
             if (activate) ActivateTab(tab);
             return tab;
+        }
+
+        private int HomeIndex
+        {
+            get
+            {
+                for (int i = 0; i < _tabs.Count; i++)
+                    if (_tabs[i].Model.IsHome) return i;
+                return -1;
+            }
+        }
+
+        private void ActivateHome()
+        {
+            int index = HomeIndex;
+            if (index >= 0) ActivateTab(_tabs[index]);
         }
 
         private void ConnectInTab(SessionTab tab, ConnectionProfile profile)
@@ -229,6 +272,7 @@ namespace RdpTabs
         {
             if (index < 0 || index >= _tabs.Count) return;
             SessionTab tab = _tabs[index];
+            if (tab.Model.IsHome) return;          // Home is permanent
             SessionTab previouslyActive = ActiveTab;
 
             if (tab.Session != null) tab.Session.ShutdownForClose();
@@ -236,12 +280,6 @@ namespace RdpTabs
             tab.Page.Dispose();
             _tabs.RemoveAt(index);
             _strip.RemoveAt(index);
-
-            if (_tabs.Count == 0)
-            {
-                Close();   // closing the last tab closes the window, like a browser
-                return;
-            }
 
             // Closing a background tab must not switch away from the current one
             SessionTab next = previouslyActive != null && previouslyActive != tab && _tabs.Contains(previouslyActive)
@@ -307,8 +345,7 @@ namespace RdpTabs
 
                 menu.Items.Add(Menus.Item("Open another in a new tab", delegate
                 {
-                    SessionTab duplicate = AddNewTabPage(true);
-                    ConnectInTab(duplicate, tab.Profile);
+                    ConnectInTab(AddSessionSlot(true), tab.Profile);
                 }));
                 menu.Items.Add(Menus.Item("Edit connection...", delegate { EditTabConnection(tab); }));
 
@@ -441,7 +478,7 @@ namespace RdpTabs
 
                 if (result == DialogResult.OK)
                 {
-                    SessionTab tab = targetTab != null ? targetTab : AddNewTabPage(true);
+                    SessionTab tab = targetTab != null ? targetTab : AddSessionSlot(true);
                     ConnectInTab(tab, edited);
                 }
             }
@@ -585,7 +622,7 @@ namespace RdpTabs
             switch (keyData)
             {
                 case Keys.Control | Keys.T:
-                    AddNewTabPage(true);
+                    ActivateHome();          // there is no "+" any more; Home is the new-connection page
                     return true;
                 case Keys.Control | Keys.W:
                     CloseTab(_strip.SelectedIndex);
@@ -637,16 +674,12 @@ namespace RdpTabs
             FocusActivePage();
             if (_startupProfiles.Count == 0) return;
 
-            // Creating the ActiveX control after the window is shown is the most reliable order.
-            // The first profile reuses the empty tab; the rest get their own.
+            // Creating the ActiveX control after the window is shown is the most reliable order. Every
+            // profile gets its own tab; Home stays put at the end.
             List<ConnectionProfile> pending = new List<ConnectionProfile>(_startupProfiles);
             _startupProfiles.Clear();
             for (int i = 0; i < pending.Count; i++)
-            {
-                SessionTab tab = i == 0 ? _tabs[0] : AddNewTabPage(false);
-                ConnectInTab(tab, pending[i]);
-            }
-            ActivateTab(_tabs[0]);
+                ConnectInTab(AddSessionSlot(i == 0), pending[i]);
         }
 
         protected override void WndProc(ref Message m)
