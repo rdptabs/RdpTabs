@@ -941,7 +941,10 @@ namespace RdpTabs
                 EnsureMetrics();
                 float s = _dpi / 96f;
                 int slot = _slotMax;
-                int tabs = _tabs.Count <= 1 ? slot : slot + (_tabs.Count - 1) * (slot - _shoulder);
+                // Never narrower than two tabs: a one-tab island looked stunted, and the extra room doubles
+                // as somewhere to grab it.
+                int count = Math.Max(2, _tabs.Count);
+                int tabs = slot + (count - 1) * (slot - _shoulder);
                 return TabsLeft + tabs + Scale(10, s) + _newTabSize + _dragGrip +
                        _windowButtonWidth * 3 + _slant;
             }

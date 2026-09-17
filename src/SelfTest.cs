@@ -31,6 +31,18 @@ namespace RdpTabs
             {
             }
 
+            // Render the previews in whichever theme the user has chosen, not just the system one -- otherwise
+            // the light palette never gets looked at.
+            try
+            {
+                ProfileStore settings = ProfileStore.Load();
+                Theme.SetMode(settings.Theme);
+                Native.SetAppDarkMode(Theme.IsDark);
+            }
+            catch (Exception)
+            {
+            }
+
             Line("RdpTabs self test");
             Line("================================================");
             Line("Time:    " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
